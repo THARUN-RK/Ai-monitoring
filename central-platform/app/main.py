@@ -31,12 +31,10 @@ app = FastAPI(
 
 # --------------------------------------------------
 # CORS CONFIGURATION
-# ALLOWED_ORIGINS env var: comma-separated list of allowed origins.
-# Set to "*" on Render to allow all origins (update once you know your
-# frontend URL, e.g. https://my-app.onrender.com).
+# Default to allow all origins so local dev, LAN IP, and deployed frontends work cleanly.
 # --------------------------------------------------
 
-_raw_origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:5173")
+_raw_origins = os.getenv("ALLOWED_ORIGINS", "*")
 if _raw_origins.strip() == "*":
     _allow_origins = ["*"]
 else:
@@ -46,8 +44,8 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=_allow_origins,
     allow_credentials=False,
-    allow_methods=["GET", "POST"],
-    allow_headers=["Authorization", "Content-Type"],
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 
