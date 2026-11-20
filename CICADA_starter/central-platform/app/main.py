@@ -4,6 +4,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 from app.database import Base, engine, get_db
 from app.egress_audit import EgressAudit
+from app.egress_router import router as egress_router
 from app.models import MetricRecord
 from app.schemas import Batch
 from app.security import authenticate_agent
@@ -11,6 +12,8 @@ from app.ml import score_feature_map
 
 Base.metadata.create_all(bind=engine)
 app = FastAPI(title="CICADA Secure AIOps API", version="0.1.0")
+
+app.include_router(egress_router)
 # Local-development CORS only. Restrict this list to your deployed UI origin.
 app.add_middleware(
     CORSMiddleware,
