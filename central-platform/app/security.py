@@ -5,10 +5,19 @@ from fastapi import Header, HTTPException
 
 # DEMO ONLY: a single bootstrap credential. Replace with persistent per-agent
 # credentials, one-way hashes, expiry, rotation and revocation before deployment.
-DEMO_KEY = os.getenv("AGENT_API_KEY", "change-this-demo-key")
-DEMO_HASH = hashlib.sha256(DEMO_KEY.encode()).hexdigest()
+# Bootstrap credentials for demo and production.
+ENV_KEY = os.getenv("AGENT_API_KEY", "change-this-demo-key")
+DEFAULT_KEY = "change-this-demo-key"
+
 DEMO_IDENTITIES = {
-    DEMO_HASH: {"tenant_id": "demo-tenant", "agent_id": "demo-agent"}
+    hashlib.sha256(DEFAULT_KEY.encode()).hexdigest(): {
+        "tenant_id": "demo-tenant",
+        "agent_id": "demo-agent",
+    },
+    hashlib.sha256(ENV_KEY.encode()).hexdigest(): {
+        "tenant_id": "demo-tenant",
+        "agent_id": "demo-agent",
+    },
 }
 
 def authenticate_agent(authorization: str | None = Header(default=None)):

@@ -9,7 +9,7 @@ import {
   Zap,
 } from "lucide-react";
 
-const API = import.meta.env.VITE_API_URL ?? "http://localhost:8000";
+const API = import.meta.env.VITE_API_URL ?? "https://ai-monitoring-5n2p.onrender.com";
 const DEMO_KEY = "change-this-demo-key";
 const REFRESH_INTERVAL = 10000;
 

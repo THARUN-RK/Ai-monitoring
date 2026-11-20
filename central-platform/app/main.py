@@ -52,8 +52,19 @@ app.add_middleware(
 
 
 # --------------------------------------------------
-# HEALTH CHECK
+# ROOT & HEALTH CHECK
 # --------------------------------------------------
+
+@app.get("/")
+@app.head("/")
+def root():
+    return {
+        "service": "CICADA Central Platform",
+        "status": "online",
+        "docs": "/docs",
+        "health": "/api/v1/health/live",
+    }
+
 
 @app.get("/api/v1/health/live")
 def live():
