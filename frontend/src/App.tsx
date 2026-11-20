@@ -234,6 +234,33 @@ export default function App() {
         </section>
       )}
 
+      {/* LIVE METRICS NUMBERS */}
+      <section className="grid" style={{ marginBottom: "1.25rem" }}>
+        <article>
+          <label><Activity /> CPU UTILIZATION</label>
+          <strong>{summary?.latest_metrics?.cpu_utilization !== undefined ? `${(summary.latest_metrics.cpu_utilization * 100).toFixed(1)}%` : "—"}</strong>
+          <small>Live hardware metric (Tier 1)</small>
+        </article>
+
+        <article>
+          <label><Server /> MEMORY (RAM)</label>
+          <strong>{summary?.latest_metrics?.memory_utilization !== undefined ? `${(summary.latest_metrics.memory_utilization * 100).toFixed(1)}%` : "—"}</strong>
+          <small>Live hardware metric (Tier 1)</small>
+        </article>
+
+        <article>
+          <label><Clock /> p95 LATENCY</label>
+          <strong>{summary?.latest_metrics?.http_latency_p95_ms !== undefined ? `${Math.round(summary.latest_metrics.http_latency_p95_ms)} ms` : "—"}</strong>
+          <small>Inference response SLA</small>
+        </article>
+
+        <article>
+          <label><AlertTriangle /> HTTP ERROR RATE</label>
+          <strong>{summary?.latest_metrics?.http_error_rate !== undefined ? `${(summary.latest_metrics.http_error_rate * 100).toFixed(1)}%` : "—"}</strong>
+          <small>Application health SLA</small>
+        </article>
+      </section>
+
       <section className="grid">
         <article>
           <label>
