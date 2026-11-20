@@ -225,14 +225,17 @@ def anomaly_preview(
 
         grouped[key][row.metric_name] = row.metric_value
 
-    # Build complete feature samples.
+    # Sort keys chronologically (oldest to newest)
+    sorted_keys = sorted(grouped.keys(), key=lambda k: k[1])
+
+    # Build complete feature samples in chronological order.
     complete_samples = [
         {
-            feature: float(metrics[feature])
+            feature: float(grouped[k][feature])
             for feature in required_features
         }
-        for metrics in grouped.values()
-        if all(feature in metrics for feature in required_features)
+        for k in sorted_keys
+        if all(feature in grouped[k] for feature in required_features)
     ]
 
     # Check historical data availability.
@@ -246,7 +249,7 @@ def anomaly_preview(
             "reason": "Insufficient complete historical telemetry.",
         }
 
-    # Latest sample is evaluated separately.
+    # Latest sample (chronologically last) is evaluated against history.
     historical_samples = complete_samples[:-1]
     latest_sample = complete_samples[-1]
 

@@ -26,6 +26,13 @@ type Summary = {
   }>;
 };
 
+type AnomalySignal = {
+  feature: string;
+  value: number;
+  threshold: number;
+  exceeded: boolean;
+};
+
 type Anomaly = {
   tenant_id: string;
   status: string;
@@ -33,6 +40,10 @@ type Anomaly = {
   score: number;
   model_version: string;
   note: string;
+  signals?: AnomalySignal[];
+  explanation?: string;
+  recommendation?: string;
+  scored_sample?: Record<string, number>;
 };
 
 export default function App() {
@@ -129,32 +140,79 @@ export default function App() {
         <section className="panel">
           <div className="panel-title">
             <div>
-              <p className="eyebrow">ML SECURITY MONITOR</p>
-              <h2>Anomaly Detection</h2>
+              <p className="eyebrow">AIOPS OBSERVABILITY ENGINE</p>
+              <h2>AI Anomaly Detection (Isolation Forest)</h2>
             </div>
             <AlertTriangle />
           </div>
 
           {anomaly.anomaly ? (
-            <div className="error">
+            <div className="error" style={{ marginBottom: "1rem" }}>
               <AlertTriangle />
               <div>
-                <strong>Potential anomaly detected</strong>
-                <p>
-                  The ML model classified the evaluated input as an outlier.
-                </p>
+                <strong>Critical Anomaly Alert Triggered</strong>
+                <p>{anomaly.explanation || "The ML model classified the evaluated telemetry input as a statistical outlier."}</p>
+                {anomaly.recommendation && (
+                  <p style={{ marginTop: "0.5rem", fontWeight: "bold" }}>
+                    Recommended Action: {anomaly.recommendation}
+                  </p>
+                )}
               </div>
             </div>
           ) : (
-            <div>
-              <ShieldCheck />
-              <strong>No outlier detected</strong>
+            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "1rem" }}>
+              <ShieldCheck color="#22c55e" />
+              <strong>All metrics within normal operational boundaries</strong>
             </div>
           )}
 
-          <p>Model: {anomaly.model_version}</p>
-          <p>Anomaly score: {anomaly.score.toFixed(4)}</p>
-          <small>{anomaly.note}</small>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "1rem", marginBottom: "1rem" }}>
+            <div>
+              <small>MODEL VERSION</small>
+              <p><b>{anomaly.model_version}</b></p>
+            </div>
+            <div>
+              <small>ANOMALY SCORE</small>
+              <p><b>{anomaly.score.toFixed(4)}</b> <small style={{ color: anomaly.score < 0 ? "#ef4444" : "#22c55e" }}>({anomaly.score < 0 ? "Outlier" : "Nominal"})</small></p>
+            </div>
+          </div>
+
+          {anomaly.signals && anomaly.signals.length > 0 && (
+            <div className="table-wrap" style={{ marginTop: "0.5rem" }}>
+              <table>
+                <thead>
+                  <tr>
+                    <th>SIGNAL FEATURE</th>
+                    <th>OBSERVED VALUE</th>
+                    <th>THRESHOLD</th>
+                    <th>STATUS</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {anomaly.signals.map((sig) => (
+                    <tr key={sig.feature}>
+                      <td><code>{sig.feature}</code></td>
+                      <td><b>{sig.value}</b></td>
+                      <td>{sig.threshold}</td>
+                      <td>
+                        <span style={{
+                          padding: "2px 8px",
+                          borderRadius: "4px",
+                          fontSize: "0.8rem",
+                          background: sig.exceeded ? "rgba(239, 68, 68, 0.2)" : "rgba(34, 197, 94, 0.2)",
+                          color: sig.exceeded ? "#ef4444" : "#22c55e"
+                        }}>
+                          {sig.exceeded ? "EXCEEDED" : "NORMAL"}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          <small style={{ marginTop: "0.75rem", display: "block" }}>{anomaly.note}</small>
         </section>
       )}
 

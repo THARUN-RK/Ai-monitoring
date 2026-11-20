@@ -70,13 +70,50 @@ def score_feature_map(values: dict[str, float], model=None):
 
         model.fit(baseline)
 
-    prediction = model.predict(vector)[0]
-    score = model.decision_function(vector)[0]
+    is_anomaly = bool(prediction == -1)
+    
+    # Feature signal thresholds for explainability
+    thresholds = {
+        "cpu_utilization": 0.80,
+        "memory_utilization": 0.85,
+        "http_error_rate": 0.05,
+        "http_latency_p95_ms": 500.0,
+    }
+
+    signals = []
+    explanations = []
+    recommendations = []
+
+    for feat, thresh in thresholds.items():
+        val = float(values.get(feat, 0.0))
+        exceeded = val > thresh
+        signals.append({
+            "feature": feat,
+            "value": round(val, 4),
+            "threshold": thresh,
+            "exceeded": exceeded,
+        })
+        if exceeded:
+            explanations.append(f"{feat} at {val:.2f} exceeded nominal threshold ({thresh})")
+
+    if values.get("cpu_utilization", 0) > 0.80:
+        recommendations.append("Increase CPU allocation or scale service replicas.")
+    if values.get("http_latency_p95_ms", 0) > 500:
+        recommendations.append("Investigate upstream database locks or slow downstream dependencies.")
+    if values.get("http_error_rate", 0) > 0.05:
+        recommendations.append("Check application error logs for unhandled 5xx exceptions.")
+    if not recommendations:
+        recommendations.append("System operating within baseline variance.")
+
+    explanation_text = "; ".join(explanations) if explanations else "Metric combination deviated from baseline clustering."
 
     return {
         "status": "scored",
-        "anomaly": bool(prediction == -1),
+        "anomaly": is_anomaly,
         "score": float(score),
         "model_version": MODEL_VERSION,
-        "note": "Outlier signal only; not a root-cause diagnosis.",
+        "signals": signals,
+        "explanation": explanation_text if is_anomaly else "Telemetry consistent with normal cluster.",
+        "recommendation": "; ".join(recommendations) if is_anomaly else "No corrective action required.",
+        "note": "Isolation Forest ML outlier detection with signal threshold attribution.",
     }
