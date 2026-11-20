@@ -1,8 +1,0 @@
-**/.venv/
-**/__pycache__/
-**/*.py[cod]
-**/*.db
-**/.env
-collector/buffer/
-collector/logs/
-.pytest_cache/
