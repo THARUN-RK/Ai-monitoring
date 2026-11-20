@@ -70,6 +70,9 @@ def score_feature_map(values: dict[str, float], model=None):
 
         model.fit(baseline)
 
+    prediction = model.predict(vector)[0]
+    score = model.decision_function(vector)[0]
+
     is_anomaly = bool(prediction == -1)
     
     # Feature signal thresholds for explainability

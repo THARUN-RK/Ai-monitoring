@@ -82,17 +82,18 @@ export default function App() {
         safeFetch("/api/v1/anomalies/preview", headers),
       ]);
 
-      if (!summaryResponse.ok || !anomalyResponse.ok) {
-        throw new Error(
-          `API returned ${summaryResponse.status} / ${anomalyResponse.status}. Connecting to live Render backend...`
-        );
+      if (summaryResponse && summaryResponse.ok) {
+        const summaryData = await summaryResponse.json();
+        setSummary(summaryData);
+      } else {
+        throw new Error("Unable to fetch telemetry summary. Check backend connection.");
       }
 
-      const summaryData = await summaryResponse.json();
-      const anomalyData = await anomalyResponse.json();
+      if (anomalyResponse && anomalyResponse.ok) {
+        const anomalyData = await anomalyResponse.json();
+        setAnomaly(anomalyData);
+      }
 
-      setSummary(summaryData);
-      setAnomaly(anomalyData);
       setLastUpdated(new Date().toLocaleTimeString());
     } catch (err) {
       setError(
