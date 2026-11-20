@@ -135,6 +135,9 @@
     <!-- ═══════════════════ DASHBOARD GRID ═══════════════════ -->
     <div class="dashboard">
 
+      <!-- ════════════ VIEW 1: DASHBOARD (FLEET OVERVIEW) ════════════ -->
+      <div id="view-dashboard" class="dashboard-view">
+
       <!-- ── ROW 1: KPI Cards ── -->
       <section class="kpi-section" aria-label="Key Performance Indicators">
 
@@ -390,6 +393,428 @@
         </div>
 
       </section>
+      </div><!-- /view-dashboard -->
+
+      <!-- ════════════ VIEW 2: MODELS (MODEL REGISTRY) ════════════ -->
+      <div id="view-models" class="dashboard-view" style="display:none">
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title"><i class="fas fa-microchip card-icon"></i>Registered AI Models &amp; Fleet Status</div>
+            <div class="card-actions">
+              <span class="live-tag"><span class="live-tag-dot"></span>ACTIVE FLEET</span>
+              <button class="nw-btn nw-btn-cyan" onclick="alert('Model registration requires admin permissions on demo tenant.')"><i class="fas fa-plus"></i> Register Model</button>
+            </div>
+          </div>
+          <div class="card-body">
+            <div class="nw-table-wrap">
+              <table class="nw-table">
+                <thead>
+                  <tr>
+                    <th>Model</th>
+                    <th>Provider</th>
+                    <th>Version</th>
+                    <th>Latency (p95)</th>
+                    <th>Accuracy</th>
+                    <th>Error Rate</th>
+                    <th>Status</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td><strong>GPT-4o</strong><br><small style="color:var(--text-3)">General reasoning &amp; tools</small></td>
+                    <td>OpenAI API</td>
+                    <td><code>2024-08-06</code></td>
+                    <td><span style="color:var(--cyan);font-weight:700">124ms</span></td>
+                    <td>97.4%</td>
+                    <td>1.2%</td>
+                    <td><span class="nw-badge nw-badge-online"><i class="fas fa-circle" style="font-size:7px"></i> ONLINE</span></td>
+                    <td><button class="nw-btn nw-btn-outline" style="padding:4px 8px;font-size:11px" onclick="alert('Displaying telemetry slice for GPT-4o')">View Metrics</button></td>
+                  </tr>
+                  <tr>
+                    <td><strong>Claude 3.5 Sonnet</strong><br><small style="color:var(--text-3)">Code synthesis &amp; analysis</small></td>
+                    <td>Anthropic API</td>
+                    <td><code>v1.0.2</code></td>
+                    <td><span style="color:var(--cyan);font-weight:700">98ms</span></td>
+                    <td>98.1%</td>
+                    <td>0.8%</td>
+                    <td><span class="nw-badge nw-badge-online"><i class="fas fa-circle" style="font-size:7px"></i> ONLINE</span></td>
+                    <td><button class="nw-btn nw-btn-outline" style="padding:4px 8px;font-size:11px" onclick="alert('Displaying telemetry slice for Claude 3.5')">View Metrics</button></td>
+                  </tr>
+                  <tr>
+                    <td><strong>Gemini 1.5 Pro</strong><br><small style="color:var(--text-3)">Long-context multimodal</small></td>
+                    <td>Google Vertex</td>
+                    <td><code>002-preview</code></td>
+                    <td><span style="color:var(--cyan);font-weight:700">87ms</span></td>
+                    <td>96.8%</td>
+                    <td>1.5%</td>
+                    <td><span class="nw-badge nw-badge-online"><i class="fas fa-circle" style="font-size:7px"></i> ONLINE</span></td>
+                    <td><button class="nw-btn nw-btn-outline" style="padding:4px 8px;font-size:11px" onclick="alert('Displaying telemetry slice for Gemini Pro')">View Metrics</button></td>
+                  </tr>
+                  <tr>
+                    <td><strong>LLaMA 3-70B</strong><br><small style="color:var(--text-3)">Self-hosted local cluster</small></td>
+                    <td>Local vLLM</td>
+                    <td><code>meta-llama3-70b</code></td>
+                    <td><span style="color:var(--amber);font-weight:700">312ms</span></td>
+                    <td>94.2%</td>
+                    <td>4.2%</td>
+                    <td><span class="nw-badge nw-badge-warn"><i class="fas fa-triangle-exclamation" style="font-size:7px"></i> DEGRADED</span></td>
+                    <td><button class="nw-btn nw-btn-outline" style="padding:4px 8px;font-size:11px" onclick="alert('Displaying telemetry slice for LLaMA 3')">View Metrics</button></td>
+                  </tr>
+                  <tr>
+                    <td><strong>cicada-iforest-v1</strong><br><small style="color:var(--text-3)">NeuraWatch Isolation Forest</small></td>
+                    <td>Central SaaS Platform</td>
+                    <td><code>v1.0.0 (Scikit-Learn)</code></td>
+                    <td><span style="color:var(--cyan);font-weight:700">14ms</span></td>
+                    <td>99.2% (ROC-AUC)</td>
+                    <td>0.0%</td>
+                    <td><span class="nw-badge nw-badge-purple"><i class="fas fa-brain" style="font-size:7px"></i> ML ENGINE</span></td>
+                    <td><button class="nw-btn nw-btn-outline" style="padding:4px 8px;font-size:11px" onclick="alert('Isolation Forest model trained on tenant telemetry')">Explain Model</button></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div><!-- /view-models -->
+
+      <!-- ════════════ VIEW 3: INFERENCE (SLA & LATENCY) ════════════ -->
+      <div id="view-inference" class="dashboard-view" style="display:none">
+        <section class="kpi-section">
+          <div class="kpi-card">
+            <div class="kpi-top"><div class="kpi-icon-wrap accent-cyan"><i class="fas fa-stopwatch"></i></div></div>
+            <div class="kpi-value">84<span class="kpi-unit">ms</span></div>
+            <div class="kpi-label">Median Latency (p50)</div>
+            <div class="kpi-change up"><i class="fas fa-check"></i> Within SLA (&lt; 100ms)</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-top"><div class="kpi-icon-wrap accent-violet"><i class="fas fa-clock"></i></div></div>
+            <div class="kpi-value">142<span class="kpi-unit">ms</span></div>
+            <div class="kpi-label">p90 Latency</div>
+            <div class="kpi-change up"><i class="fas fa-check"></i> Nominal Distribution</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-top"><div class="kpi-icon-wrap accent-amber"><i class="fas fa-bolt"></i></div></div>
+            <div class="kpi-value" id="val-inference-p95">185<span class="kpi-unit">ms</span></div>
+            <div class="kpi-label">p95 Latency (Live)</div>
+            <div class="kpi-change up-bad"><i class="fas fa-arrow-trend-up"></i> Dynamic Telemetry</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-top"><div class="kpi-icon-wrap accent-red"><i class="fas fa-triangle-exclamation"></i></div></div>
+            <div class="kpi-value">480<span class="kpi-unit">ms</span></div>
+            <div class="kpi-label">p99 Latency (Tail)</div>
+            <div class="kpi-change down-good"><i class="fas fa-shield"></i> Tail Latency Guarded</div>
+          </div>
+        </section>
+
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title"><i class="fas fa-chart-line card-icon"></i>Live Latency Percentile Distribution</div>
+            <div class="card-actions">
+              <span class="threshold-tag">SLA Target: 250ms p95</span>
+            </div>
+          </div>
+          <div class="card-body">
+            <p style="color:var(--text-2);font-size:13px;margin-bottom:12px;">Real-time latency tracked across all model inferences. Outlier spikes exceeding 500ms are tagged for Isolation Forest evaluation.</p>
+            <div class="nw-table-wrap">
+              <table class="nw-table">
+                <thead>
+                  <tr>
+                    <th>Service</th>
+                    <th>p50 Latency</th>
+                    <th>p95 Latency</th>
+                    <th>p99 Latency</th>
+                    <th>Error Rate</th>
+                    <th>SLA Compliance</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td><code>checkout-service</code></td>
+                    <td>72ms</td>
+                    <td>168ms</td>
+                    <td>310ms</td>
+                    <td>0.4%</td>
+                    <td><span class="nw-badge nw-badge-online">99.8%</span></td>
+                  </tr>
+                  <tr>
+                    <td><code>recommendation-api</code></td>
+                    <td>94ms</td>
+                    <td>210ms</td>
+                    <td>440ms</td>
+                    <td>1.1%</td>
+                    <td><span class="nw-badge nw-badge-online">99.2%</span></td>
+                  </tr>
+                  <tr>
+                    <td><code>fraud-detection-model</code></td>
+                    <td>38ms</td>
+                    <td>85ms</td>
+                    <td>190ms</td>
+                    <td>0.1%</td>
+                    <td><span class="nw-badge nw-badge-online">99.9%</span></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div><!-- /view-inference -->
+
+      <!-- ════════════ VIEW 4: COST TRACKER ════════════ -->
+      <div id="view-costs" class="dashboard-view" style="display:none">
+        <section class="kpi-section">
+          <div class="kpi-card">
+            <div class="kpi-top"><div class="kpi-icon-wrap accent-emerald"><i class="fas fa-dollar-sign"></i></div></div>
+            <div class="kpi-value" id="kpi-total-cost">$14.28</div>
+            <div class="kpi-label">Today's Total Spend</div>
+            <div class="kpi-change up"><i class="fas fa-arrow-trend-up"></i> Within $50 daily budget</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-top"><div class="kpi-icon-wrap accent-cyan"><i class="fas fa-coins"></i></div></div>
+            <div class="kpi-value" id="kpi-total-tokens-2">4.82<span class="kpi-unit">M</span></div>
+            <div class="kpi-label">Tokens Processed</div>
+            <div class="kpi-change up">+1.2M from yesterday</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-top"><div class="kpi-icon-wrap accent-violet"><i class="fas fa-piggy-bank"></i></div></div>
+            <div class="kpi-value">$38.40</div>
+            <div class="kpi-label">Cache Savings</div>
+            <div class="kpi-change down-good"><i class="fas fa-check"></i> 42% prompt caching</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-top"><div class="kpi-icon-wrap accent-amber"><i class="fas fa-fire"></i></div></div>
+            <div class="kpi-value">$1.18<span class="kpi-unit">/hr</span></div>
+            <div class="kpi-label">Burn Rate</div>
+            <div class="kpi-change down-good">Estimated $28.32/day</div>
+          </div>
+        </section>
+
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title"><i class="fas fa-receipt card-icon"></i>Cost &amp; Token Breakdown by Model</div>
+          </div>
+          <div class="card-body">
+            <div class="nw-table-wrap">
+              <table class="nw-table">
+                <thead>
+                  <tr>
+                    <th>Model</th>
+                    <th>Prompt Tokens</th>
+                    <th>Completion Tokens</th>
+                    <th>Cached Tokens</th>
+                    <th>Unit Cost / 1M</th>
+                    <th>Total Cost</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td><strong>GPT-4o</strong></td>
+                    <td>1,840,200</td>
+                    <td>420,100</td>
+                    <td>720,000</td>
+                    <td>$2.50 / $10.00</td>
+                    <td><span style="color:var(--emerald);font-weight:700">$8.80</span></td>
+                  </tr>
+                  <tr>
+                    <td><strong>Claude 3.5 Sonnet</strong></td>
+                    <td>1,240,000</td>
+                    <td>310,000</td>
+                    <td>540,000</td>
+                    <td>$3.00 / $15.00</td>
+                    <td><span style="color:var(--emerald);font-weight:700">$5.12</span></td>
+                  </tr>
+                  <tr>
+                    <td><strong>Gemini 1.5 Pro</strong></td>
+                    <td>890,000</td>
+                    <td>190,000</td>
+                    <td>410,000</td>
+                    <td>$1.25 / $5.00</td>
+                    <td><span style="color:var(--emerald);font-weight:700">$1.64</span></td>
+                  </tr>
+                  <tr>
+                    <td><strong>LLaMA 3-70B (Local)</strong></td>
+                    <td>420,000</td>
+                    <td>88,000</td>
+                    <td>0</td>
+                    <td>GPU compute only</td>
+                    <td><span style="color:var(--emerald);font-weight:700">$0.00 (Self-hosted)</span></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div><!-- /view-costs -->
+
+      <!-- ════════════ VIEW 5: DATA DRIFT ════════════ -->
+      <div id="view-drift" class="dashboard-view" style="display:none">
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title"><i class="fas fa-chart-line card-icon"></i>Feature &amp; Embedding Drift Analysis</div>
+            <div class="card-actions">
+              <span class="threshold-tag"><i class="fas fa-bell"></i> Critical Alert: PSI &gt; 0.25</span>
+            </div>
+          </div>
+          <div class="card-body">
+            <p style="color:var(--text-2);font-size:13px;margin-bottom:14px;">Population Stability Index (PSI) and Wasserstein Distance computed against the 30-day baseline distribution.</p>
+            <div class="nw-table-wrap">
+              <table class="nw-table">
+                <thead>
+                  <tr>
+                    <th>Feature Signal</th>
+                    <th>Baseline Mean</th>
+                    <th>Observed Mean</th>
+                    <th>PSI Score</th>
+                    <th>Wasserstein Dist</th>
+                    <th>Drift Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td><code>cpu_utilization</code></td>
+                    <td>0.420</td>
+                    <td>0.458</td>
+                    <td>0.042</td>
+                    <td>0.038</td>
+                    <td><span class="nw-badge nw-badge-online">STABLE</span></td>
+                  </tr>
+                  <tr>
+                    <td><code>memory_utilization</code></td>
+                    <td>0.540</td>
+                    <td>0.562</td>
+                    <td>0.061</td>
+                    <td>0.045</td>
+                    <td><span class="nw-badge nw-badge-online">STABLE</span></td>
+                  </tr>
+                  <tr>
+                    <td><code>http_latency_p95_ms</code></td>
+                    <td>175.0ms</td>
+                    <td>210.4ms</td>
+                    <td>0.148</td>
+                    <td>35.40</td>
+                    <td><span class="nw-badge nw-badge-warn">MODERATE DRIFT</span></td>
+                  </tr>
+                  <tr>
+                    <td><code>http_error_rate</code></td>
+                    <td>0.015</td>
+                    <td>0.019</td>
+                    <td>0.082</td>
+                    <td>0.004</td>
+                    <td><span class="nw-badge nw-badge-online">STABLE</span></td>
+                  </tr>
+                  <tr>
+                    <td><code>user_prompt_embeddings</code></td>
+                    <td>0.000 (Centroid)</td>
+                    <td>0.312 (Distance)</td>
+                    <td>0.312</td>
+                    <td>0.298</td>
+                    <td><span class="nw-badge nw-badge-crit">SIGNIFICANT DRIFT</span></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div><!-- /view-drift -->
+
+      <!-- ════════════ VIEW 6: ALERTS & INCIDENTS ════════════ -->
+      <div id="view-alerts" class="dashboard-view" style="display:none">
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title"><i class="fas fa-bell card-icon"></i>Alert &amp; Incident Management Hub</div>
+            <div class="card-actions">
+              <button class="nw-btn nw-btn-cyan" onclick="alert('All unacknowledged alerts verified.')"><i class="fas fa-check-double"></i> Acknowledge All</button>
+            </div>
+          </div>
+          <div class="card-body">
+            <div class="alerts-feed-wrap" id="alerts-hub-feed">
+              <div class="alert-item crit">
+                <i class="fas fa-triangle-exclamation alert-ic"></i>
+                <div class="alert-txt">
+                  <div class="alert-title">[AI ENGINE] Isolation Forest detected statistical outlier: cpu_utilization=0.98, http_latency=1450ms</div>
+                  <div class="alert-time">Live Detection · Recommended: Auto-scale checkout replicas</div>
+                </div>
+                <span class="alert-pill">AI ANOMALY</span>
+              </div>
+              <div class="alert-item warn">
+                <i class="fas fa-triangle-exclamation alert-ic"></i>
+                <div class="alert-txt">
+                  <div class="alert-title">LLaMA 3 inference latency exceeded nominal threshold (312ms &gt; 250ms)</div>
+                  <div class="alert-time">4m ago · Root Cause: Local GPU VRAM saturation</div>
+                </div>
+                <span class="alert-pill">WARNING</span>
+              </div>
+              <div class="alert-item ok">
+                <i class="fas fa-circle-check alert-ic"></i>
+                <div class="alert-txt">
+                  <div class="alert-title">Privacy allowlist policy verified: 100% of telemetry sanitized before egress</div>
+                  <div class="alert-time">12m ago · Policy: demo-allowlist-v1</div>
+                </div>
+                <span class="alert-pill">RECOVERED</span>
+              </div>
+              <div class="alert-item info">
+                <i class="fas fa-circle-info alert-ic"></i>
+                <div class="alert-txt">
+                  <div class="alert-title">Isolation Forest model re-trained on 21 historical tenant observation windows</div>
+                  <div class="alert-time">25m ago · Model: cicada-iforest-v1</div>
+                </div>
+                <span class="alert-pill">INFO</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div><!-- /view-alerts -->
+
+      <!-- ════════════ VIEW 7: SETTINGS & PRIVACY ════════════ -->
+      <div id="view-settings" class="dashboard-view" style="display:none">
+        <div class="settings-grid">
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title"><i class="fas fa-cloud card-icon"></i>SaaS Platform Connection</div>
+            </div>
+            <div class="card-body">
+              <div class="setting-item">
+                <div class="setting-label">Live Central API Gateway</div>
+                <div class="setting-value">https://ai-monitoring-5n2p.onrender.com</div>
+              </div>
+              <div class="setting-item">
+                <div class="setting-label">Tenant ID</div>
+                <div class="setting-value">demo-tenant</div>
+              </div>
+              <div class="setting-item">
+                <div class="setting-label">Agent ID</div>
+                <div class="setting-value">demo-agent</div>
+              </div>
+              <div class="setting-item">
+                <div class="setting-label">Collector Health Status</div>
+                <div class="setting-value" style="color:#10b981"><i class="fas fa-circle"></i> Connected &amp; Streaming (Interval: 10s)</div>
+              </div>
+              <button class="nw-btn nw-btn-cyan" onclick="fetch('https://ai-monitoring-5n2p.onrender.com/api/v1/health/live').then(r=>r.json()).then(d=>alert('Live Backend Status: ' + JSON.stringify(d)))"><i class="fas fa-satellite-dish"></i> Ping Backend Gateway</button>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title"><i class="fas fa-shield-halved card-icon"></i>Privacy Allowlist Engine (Tier 1)</div>
+            </div>
+            <div class="card-body">
+              <div class="setting-item">
+                <div class="setting-label">Allowlisted Telemetry Metrics</div>
+                <div class="setting-value" style="font-size:12px">cpu_utilization, memory_utilization, http_error_rate, http_latency_p95_ms, network_bytes_per_second</div>
+              </div>
+              <div class="setting-item">
+                <div class="setting-label">Egress Privacy Enforcement</div>
+                <div class="setting-value" style="color:#10b981;font-size:12px">STRICT ALLOWLIST PROJECTION: Raw payloads, database tokens, credentials, passwords, and user PII are rejected before transmission.</div>
+              </div>
+              <div class="setting-item">
+                <div class="setting-label">Policy Version</div>
+                <div class="setting-value">demo-allowlist-v1</div>
+              </div>
+              <a href="https://ai-monitoring-5n2p.onrender.com/docs" target="_blank" class="nw-btn nw-btn-outline" style="text-decoration:none"><i class="fas fa-book"></i> Open API Documentation (Swagger)</a>
+            </div>
+          </div>
+        </div>
+      </div><!-- /view-settings -->
 
     </div><!-- /dashboard -->
   </main>

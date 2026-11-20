@@ -746,12 +746,56 @@ document.getElementById('sidebar-toggle').addEventListener('click', () => {
   document.getElementById('sidebar').classList.toggle('collapsed');
 });
 
-// Nav links — highlight active
+// ══════════════════════════════════════
+// View Switching Map & Handler
+// ══════════════════════════════════════
+const VIEW_MAP = {
+  'nav-dashboard': { id: 'view-dashboard', title: 'AI Performance Dashboard', subtitle: 'Real-time monitoring across all models' },
+  'nav-models':    { id: 'view-models',    title: 'Model Registry & Health', subtitle: 'Fleet status, versions, and deployment tiers' },
+  'nav-inference': { id: 'view-inference', title: 'Inference & SLA Observability', subtitle: 'Latency percentiles, throughput, and error rates' },
+  'nav-costs':     { id: 'view-costs',     title: 'Cost & Token Tracking', subtitle: 'Daily spend, model token distributions, and budget burn-rates' },
+  'nav-drift':     { id: 'view-drift',     title: 'Feature & Data Drift Analysis', subtitle: 'Population Stability Index (PSI) and embedding variance' },
+  'nav-alerts':    { id: 'view-alerts',    title: 'Alerts & Incident Management Hub', subtitle: 'Isolation Forest anomaly detections and operational triage' },
+  'nav-settings':  { id: 'view-settings',  title: 'Platform & Security Settings', subtitle: 'Two-tier SaaS gateway configuration and privacy allowlist policies' },
+};
+
+function switchView(navId) {
+  const target = VIEW_MAP[navId];
+  if (!target) return;
+
+  // 1. Update active sidebar item
+  document.querySelectorAll('.nav-link').forEach(l => l.classList.remove('active'));
+  const activeNav = document.getElementById(navId);
+  if (activeNav) activeNav.classList.add('active');
+
+  // 2. Update Header
+  const titleEl = document.querySelector('.header-title');
+  const subEl = document.querySelector('.header-subtitle');
+  if (titleEl) titleEl.textContent = target.title;
+  if (subEl) subEl.textContent = target.subtitle;
+
+  // 3. Switch visible view
+  document.querySelectorAll('.dashboard-view').forEach(v => {
+    v.style.display = 'none';
+  });
+  const viewEl = document.getElementById(target.id);
+  if (viewEl) {
+    viewEl.style.display = 'flex';
+  }
+
+  // 4. Trigger resize on Chart.js instances if returning to dashboard
+  if (navId === 'nav-dashboard') {
+    [inferenceChart, costChart, donutChart, compareChart, driftChart].forEach(c => {
+      try { c && c.resize(); } catch (_) {}
+    });
+  }
+}
+
+// Nav links — switch views on click
 document.querySelectorAll('.nav-link').forEach(link => {
   link.addEventListener('click', e => {
     e.preventDefault();
-    document.querySelectorAll('.nav-link').forEach(l => l.classList.remove('active'));
-    link.classList.add('active');
+    switchView(link.id);
   });
 });
 
