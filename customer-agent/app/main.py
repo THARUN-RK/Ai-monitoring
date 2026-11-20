@@ -7,7 +7,14 @@ import time
 import json
 import psutil
 import requests
+from pathlib import Path
 from datetime import datetime, timezone
+
+# Ensure customer-agent root directory is on sys.path
+_current_dir = Path(__file__).resolve().parent
+_agent_root = _current_dir.parent
+if str(_agent_root) not in sys.path:
+    sys.path.insert(0, str(_agent_root))
 
 from app.policy import sanitize_event, build_approved_metadata
 from app.buffer import LocalBuffer
