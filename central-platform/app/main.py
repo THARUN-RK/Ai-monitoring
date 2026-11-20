@@ -1,3 +1,4 @@
+import os
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import select
@@ -30,11 +31,20 @@ app = FastAPI(
 
 # --------------------------------------------------
 # CORS CONFIGURATION
+# ALLOWED_ORIGINS env var: comma-separated list of allowed origins.
+# Set to "*" on Render to allow all origins (update once you know your
+# frontend URL, e.g. https://my-app.onrender.com).
 # --------------------------------------------------
+
+_raw_origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:5173")
+if _raw_origins.strip() == "*":
+    _allow_origins = ["*"]
+else:
+    _allow_origins = [o.strip() for o in _raw_origins.split(",") if o.strip()]
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=_allow_origins,
     allow_credentials=False,
     allow_methods=["GET", "POST"],
     allow_headers=["Authorization", "Content-Type"],

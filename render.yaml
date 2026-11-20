@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: neurawatch-backend
+    runtime: python
+    rootDir: central-platform
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: AGENT_API_KEY
+        generateValue: true
+      - key: DATABASE_URL
+        value: sqlite:///./cicada.db
+      - key: ALLOWED_ORIGINS
+        value: "*"
+    healthCheckPath: /api/v1/health/live
+    autoDeploy: true
