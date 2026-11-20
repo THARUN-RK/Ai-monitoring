@@ -53,6 +53,21 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [lastUpdated, setLastUpdated] = useState("");
 
+  async function safeFetch(path: string, headers: Record<string, string>) {
+    try {
+      const res = await fetch(`${API}${path}`, { headers });
+      if (res.ok) return res;
+    } catch {
+      // If direct request fails (e.g. CORS preflight on Wi-Fi IP), try relative path via Vite proxy
+      if (API) {
+        const proxyRes = await fetch(path, { headers });
+        if (proxyRes.ok) return proxyRes;
+      }
+    }
+    // Final attempt via relative proxy
+    return fetch(path, { headers });
+  }
+
   async function load() {
     setLoading(true);
     setError("");
@@ -63,12 +78,14 @@ export default function App() {
       };
 
       const [summaryResponse, anomalyResponse] = await Promise.all([
-        fetch(`${API}/api/v1/dashboard/summary`, { headers }),
-        fetch(`${API}/api/v1/anomalies/preview`, { headers }),
+        safeFetch("/api/v1/dashboard/summary", headers),
+        safeFetch("/api/v1/anomalies/preview", headers),
       ]);
 
       if (!summaryResponse.ok || !anomalyResponse.ok) {
-        throw new Error("API request failed. Check the backend.");
+        throw new Error(
+          `API returned ${summaryResponse.status} / ${anomalyResponse.status}. Connecting to live Render backend...`
+        );
       }
 
       const summaryData = await summaryResponse.json();
