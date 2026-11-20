@@ -129,13 +129,21 @@ def sanitize_event(
     return sanitized, approved_fields, redacted_fields, rejected_fields
 
 
+LEGACY_ALLOWED_METRICS = {
+    "cpu_utilization",
+    "memory_utilization",
+    "http_error_rate",
+    "http_latency_p95_ms",
+    "network_bytes_per_second",
+}
+
 def build_approved_metadata(raw_event: dict[str, Any]) -> dict[str, Any] | None:
     """
     Backward-compatible adapter for legacy batch endpoint.
     Builds nested resource/metric object compliant with schemas.Record.
     """
     sanitized, _, _, _ = sanitize_event(raw_event)
-    if not sanitized:
+    if not sanitized or sanitized["metric_name"] not in LEGACY_ALLOWED_METRICS:
         return None
 
     return {
