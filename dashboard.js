@@ -597,8 +597,119 @@ function updateDriftChart() {
 }
 
 /* ══════════════════════════════════════
-   18.  MAIN SIMULATION LOOP
+   18.  MAIN SIMULATION & LIVE BACKEND LOOP
 ══════════════════════════════════════ */
+const RENDER_BACKEND = "https://ai-monitoring-5n2p.onrender.com";
+const AUTH_TOKEN = "change-this-demo-key";
+let lastAnomalyDetected = false;
+
+async function fetchLiveBackend() {
+  try {
+    const [summaryRes, anomalyRes] = await Promise.all([
+      fetch(`${RENDER_BACKEND}/api/v1/dashboard/summary`, {
+        headers: { Authorization: `Bearer ${AUTH_TOKEN}` }
+      }),
+      fetch(`${RENDER_BACKEND}/api/v1/anomalies/preview`, {
+        headers: { Authorization: `Bearer ${AUTH_TOKEN}` }
+      })
+    ]);
+
+    if (!summaryRes.ok) return;
+    const summary = await summaryRes.json();
+    const anomaly = anomalyRes.ok ? await anomalyRes.json() : null;
+
+    const latest = summary.latest_metrics || {};
+
+    // 1. Live CPU Gauge from collector
+    if (latest.cpu_utilization !== undefined) {
+      gaugeState.cpu = Math.round(latest.cpu_utilization * 100);
+      updateGauge('arc-cpu', 'pct-cpu', gaugeState.cpu);
+    }
+
+    // 2. Live Memory Gauge from collector
+    if (latest.memory_utilization !== undefined) {
+      gaugeState.mem = Math.round(latest.memory_utilization * 100);
+      updateGauge('arc-mem', 'pct-mem', gaugeState.mem);
+    }
+
+    // 3. Live Latency KPI
+    if (latest.http_latency_p95_ms !== undefined) {
+      kpi.latency = latest.http_latency_p95_ms;
+      const el = document.getElementById('val-latency');
+      if (el) el.innerHTML = `${Math.round(kpi.latency)}<span class="kpi-unit">ms</span>`;
+    }
+
+    // 4. Live Error Rate KPI
+    if (latest.http_error_rate !== undefined) {
+      kpi.error = latest.http_error_rate * 100;
+      const el = document.getElementById('val-error');
+      if (el) el.innerHTML = `${kpi.error.toFixed(1)}<span class="kpi-unit">%</span>`;
+    }
+
+    // 5. Live Network Throughput
+    if (latest.network_bytes_per_second !== undefined) {
+      const mb = (latest.network_bytes_per_second / (1024 * 1024)).toFixed(2);
+      const el = document.getElementById('sys-net');
+      if (el) el.textContent = `${mb} MB/s`;
+    }
+
+    // 6. Isolation Forest AI Anomaly Detection Engine
+    if (anomaly && anomaly.status === "scored") {
+      const isOutlier = Boolean(anomaly.anomaly);
+      const sysStatus = document.querySelector('.header-sys-status span');
+      const sysDot = document.querySelector('.sys-dot');
+
+      if (isOutlier) {
+        if (sysStatus) {
+          sysStatus.textContent = "AI Anomaly Triggered (Isolation Forest)";
+          sysStatus.style.color = "#ef4444";
+        }
+        if (sysDot) sysDot.style.background = "#ef4444";
+
+        if (!lastAnomalyDetected) {
+          lastAnomalyDetected = true;
+          const feed = document.getElementById('alerts-feed');
+          if (feed) {
+            const item = {
+              type: 'crit',
+              icon: 'fa-triangle-exclamation',
+              text: `[AI ENGINE] ${anomaly.explanation || "Telemetry outlier detected by Isolation Forest"} | Rec: ${anomaly.recommendation || "Scale instances"}`,
+              pill: 'AI ANOMALY',
+            };
+            const alertEl = renderAlert(item, 0);
+            feed.prepend(alertEl);
+            alertCount++;
+            const badge = document.getElementById('nav-alert-badge');
+            const nbadge = document.getElementById('notif-count');
+            if (badge) badge.textContent = alertCount;
+            if (nbadge) nbadge.textContent = alertCount;
+          }
+        }
+      } else {
+        lastAnomalyDetected = false;
+        if (sysStatus) {
+          sysStatus.textContent = "All Systems Operational (AI Verified)";
+          sysStatus.style.color = "#10b981";
+        }
+        if (sysDot) sysDot.style.background = "#10b981";
+      }
+    }
+
+    // Live backend badge update
+    const liveBtn = document.getElementById('live-btn');
+    if (liveBtn) {
+      liveBtn.innerHTML = '<span class="live-btn-dot" style="background:#10b981"></span>LIVE RENDER';
+      liveBtn.title = "Connected to " + RENDER_BACKEND;
+    }
+  } catch (err) {
+    console.debug("Backend polling:", err);
+  }
+}
+
+// Initial fetch and continuous live sync every 3 seconds
+fetchLiveBackend();
+setInterval(fetchLiveBackend, 3000);
+
 let tickCount = 0;
 
 function tick() {
@@ -612,15 +723,7 @@ function tick() {
   if (tickCount % 2 === 0) {
     updateKPI();
 
-    gaugeState.cpu = driftGauge(gaugeState.cpu, 10, 95, 4);
-    gaugeState.gpu = driftGauge(gaugeState.gpu, 40, 98, 5);
-    gaugeState.mem = driftGauge(gaugeState.mem, 30, 90, 3);
-    updateGauge('arc-cpu', 'pct-cpu', gaugeState.cpu);
-    updateGauge('arc-gpu', 'pct-gpu', gaugeState.gpu);
-    updateGauge('arc-mem', 'pct-mem', gaugeState.mem);
-
     // System metrics
-    document.getElementById('sys-net').textContent   = `${rand(0.4, 2.8).toFixed(1)} GB/s`;
     document.getElementById('sys-queue').textContent = randI(10, 120).toString();
     document.getElementById('sys-cache').textContent = `${randI(70, 95)}%`;
   }
@@ -629,11 +732,6 @@ function tick() {
   if (tickCount % 5 === 0) {
     updateCostAndTokens();
     updateDriftChart();
-  }
-
-  // Random alert (10% chance each tick)
-  if (Math.random() < 0.08) {
-    pushAlert();
   }
 }
 
