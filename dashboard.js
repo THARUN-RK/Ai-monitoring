@@ -605,18 +605,38 @@ let lastAnomalyDetected = false;
 
 async function fetchLiveBackend() {
   try {
-    const [summaryRes, anomalyRes] = await Promise.all([
+    const [summaryRes, anomalyRes, egressRes] = await Promise.all([
       fetch(`${RENDER_BACKEND}/api/v1/dashboard/summary`, {
         headers: { Authorization: `Bearer ${AUTH_TOKEN}` }
       }),
       fetch(`${RENDER_BACKEND}/api/v1/anomalies/preview`, {
         headers: { Authorization: `Bearer ${AUTH_TOKEN}` }
-      })
+      }),
+      fetch(`${RENDER_BACKEND}/api/v1/telemetry/egress`, {
+        headers: { Authorization: `Bearer ${AUTH_TOKEN}` }
+      }).catch(() => null)
     ]);
 
     if (!summaryRes.ok) return;
     const summary = await summaryRes.json();
     const anomaly = anomalyRes.ok ? await anomalyRes.json() : null;
+
+    if (egressRes && egressRes.ok) {
+      const egressList = await egressRes.json();
+      const tbody = document.getElementById('egress-audit-tbody');
+      if (tbody && egressList && egressList.length > 0) {
+        tbody.innerHTML = egressList.slice(0, 10).map(e => `
+          <tr>
+            <td><code>${e.payload_id.slice(0, 14)}...</code></td>
+            <td>${e.collector_id}</td>
+            <td>${new Date(e.sent_at).toUTCString()}</td>
+            <td><span class="badge badge-emerald">${e.approved_fields_count} fields</span></td>
+            <td><span class="badge badge-red">${e.rejected_fields_count} secrets/attrs blocked</span></td>
+            <td><span class="badge badge-cyan">${e.delivery_status.toUpperCase()}</span></td>
+          </tr>
+        `).join('');
+      }
+    }
 
     const latest = summary.latest_metrics || {};
 
