@@ -52,6 +52,10 @@
       </a>
 
       <span class="nav-group-label">SECURITY &amp; AUDIT</span>
+      <a href="#" class="nav-link" id="nav-realtime">
+        <i class="fas fa-stopwatch"></i><span>Real-Time Stream</span>
+        <span class="nav-badge" id="nav-rt-badge" style="background:#00d4ff; color:#07090f">LIVE</span>
+      </a>
       <a href="#" class="nav-link" id="nav-egress">
         <i class="fas fa-shield-halved"></i><span>Egress Proof</span>
       </a>
@@ -177,6 +181,103 @@
           <button class="nw-btn" id="dash-view-incidents-btn" style="background:rgba(239,68,68,0.15); border:1px solid rgba(239,68,68,0.4); color:#fca5a5; font-size:11px; padding:8px 14px;">
             <i class="fas fa-triangle-exclamation"></i> Incident Hub &rarr;
           </button>
+        </div>
+      </section>
+
+      <!-- ── REQUIREMENT 1 & 2: REAL-TIME TIMESTAMP & ORGANISER STREAM COMPONENT ── -->
+      <section class="card" id="dashboard-realtime-card" style="padding:20px; border-left:4px solid #00d4ff; background:rgba(12,18,34,0.75); margin-bottom:20px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; margin-bottom:16px;">
+          <div>
+            <div style="display:flex; gap:10px; align-items:center;">
+              <span style="font-size:10px; font-weight:800; letter-spacing:1.5px; color:#00d4ff; text-transform:uppercase;">
+                <i class="fas fa-stopwatch"></i> REQUIREMENT 1: REAL-TIME TELEMETRY MEASUREMENT
+              </span>
+              <span class="badge" id="rt-freshness-badge" style="background:rgba(16,185,129,0.18); color:#34d399; border:1px solid #10b981; font-weight:800; font-size:10.5px; padding:2px 8px;">
+                FRESH (&lt;15s SLA)
+              </span>
+            </div>
+            <h3 style="margin:4px 0 0; font-size:16px; font-weight:700; color:#f8fafc;">
+              Measured UTC Timestamp Pipeline &amp; E2E Ingestion Latency
+            </h3>
+          </div>
+          <div style="display:flex; gap:8px; align-items:center;">
+            <span style="font-size:11px; color:#64748b;">Heartbeat: <strong id="rt-heartbeat-age" style="color:#34d399;">3.2s ago</strong></span>
+            <button class="nw-btn nw-btn-outline nw-btn-sm" id="rt-refresh-btn" style="padding:4px 10px; font-size:11px;">
+              <i class="fas fa-rotate-right"></i> Refresh
+            </button>
+          </div>
+        </div>
+
+        <!-- Real-time metrics grid -->
+        <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:12px; margin-bottom:16px;">
+          <div style="background:rgba(15,23,42,0.8); border:1px solid rgba(255,255,255,0.06); border-radius:8px; padding:12px;">
+            <span style="font-size:10px; color:#94a3b8; text-transform:uppercase; letter-spacing:0.8px; display:block;">Calculated E2E Delay</span>
+            <div style="font-size:22px; font-weight:800; color:#00d4ff; margin-top:4px;" id="rt-e2e-delay">
+              24.5<span style="font-size:12px; color:#64748b; font-weight:500;">ms</span>
+            </div>
+            <small style="font-size:10.5px; color:#34d399;" id="rt-e2e-status">● Optimal (&lt;50ms)</small>
+          </div>
+
+          <div style="background:rgba(15,23,42,0.8); border:1px solid rgba(255,255,255,0.06); border-radius:8px; padding:12px;">
+            <span style="font-size:10px; color:#94a3b8; text-transform:uppercase; letter-spacing:0.8px; display:block;">Ingestion Delay</span>
+            <div style="font-size:22px; font-weight:800; color:#cbd5e1; margin-top:4px;" id="rt-ingest-delay">
+              12.2<span style="font-size:12px; color:#64748b; font-weight:500;">ms</span>
+            </div>
+            <small style="font-size:10.5px; color:#94a3b8;">Transit to Central API</small>
+          </div>
+
+          <div style="background:rgba(15,23,42,0.8); border:1px solid rgba(255,255,255,0.06); border-radius:8px; padding:12px;">
+            <span style="font-size:10px; color:#94a3b8; text-transform:uppercase; letter-spacing:0.8px; display:block;">Processing Delay</span>
+            <div style="font-size:22px; font-weight:800; color:#cbd5e1; margin-top:4px;" id="rt-proc-delay">
+              12.3<span style="font-size:12px; color:#64748b; font-weight:500;">ms</span>
+            </div>
+            <small style="font-size:10.5px; color:#94a3b8;">Schema validation &amp; DB</small>
+          </div>
+
+          <div style="background:rgba(15,23,42,0.8); border:1px solid rgba(255,255,255,0.06); border-radius:8px; padding:12px;">
+            <span style="font-size:10px; color:#94a3b8; text-transform:uppercase; letter-spacing:0.8px; display:block;">Delayed Events</span>
+            <div style="font-size:22px; font-weight:800; color:#10b981; margin-top:4px;" id="rt-delayed-count">
+              0
+            </div>
+            <small style="font-size:10.5px; color:#94a3b8;">Out of window (&gt;15s)</small>
+          </div>
+
+          <div style="background:rgba(15,23,42,0.8); border:1px solid rgba(255,255,255,0.06); border-radius:8px; padding:12px;">
+            <span style="font-size:10px; color:#94a3b8; text-transform:uppercase; letter-spacing:0.8px; display:block;">Duplicate Events</span>
+            <div style="font-size:22px; font-weight:800; color:#10b981; margin-top:4px;" id="rt-duplicate-count">
+              0
+            </div>
+            <small style="font-size:10.5px; color:#94a3b8;">Filtered by UUID</small>
+          </div>
+        </div>
+
+        <!-- Detailed Timestamp Flow Banner -->
+        <div style="background:rgba(10,15,30,0.6); border:1px solid rgba(255,255,255,0.05); border-radius:8px; padding:12px 16px; font-size:11.5px; color:#94a3b8; display:flex; flex-wrap:wrap; gap:16px; justify-content:space-between; align-items:center;">
+          <div>
+            <strong>Last Event ID:</strong> <code style="color:#00d4ff;" id="rt-last-event-id">evt-c3b890f1-4...</code>
+            <span style="margin-left:10px;"><strong>Sequence:</strong> <code style="color:#cbd5e1;" id="rt-sequence-num">#1042</code></span>
+          </div>
+          <div style="display:flex; gap:14px; flex-wrap:wrap;">
+            <span>Source (UTC): <strong style="color:#f8fafc;" id="rt-source-ts">2026-11-21 03:15:20.120</strong></span>
+            <span>&rarr; Collector: <strong style="color:#f8fafc;" id="rt-collector-ts">03:15:20.132</strong></span>
+            <span>&rarr; Ingested: <strong style="color:#f8fafc;" id="rt-ingest-ts">03:15:20.144</strong></span>
+            <span>&rarr; Processed: <strong style="color:#34d399;" id="rt-proc-ts">03:15:20.156</strong></span>
+          </div>
+        </div>
+
+        <!-- Requirement 2: Organiser Stream Streamlined Strip -->
+        <div style="margin-top:14px; border-top:1px solid #1e293b; padding-top:12px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
+          <div style="display:flex; align-items:center; gap:10px;">
+            <span style="font-size:10px; font-weight:800; color:#a855f7; text-transform:uppercase; letter-spacing:1px;">
+              <i class="fas fa-satellite-dish"></i> REQUIREMENT 2: SHARED ORGANISER TELEMETRY STREAM
+            </span>
+            <span class="badge" id="rt-stream-badge" style="background:rgba(168,85,247,0.18); color:#c084fc; border:1px solid #a855f7; font-size:10.5px; font-weight:700;">
+              AWAITING ORGANISER STREAM PARAMS
+            </span>
+          </div>
+          <div style="font-size:11px; color:#64748b;">
+            Stream Consumer: <span style="color:#cbd5e1;" id="rt-stream-status-text">Consumer Engine Ready (HTTP_SSE / WebSocket) · Auto-Reconnect Active</span>
+          </div>
         </div>
       </section>
 
@@ -961,28 +1062,141 @@
 
       <!-- ════════════ VIEW: CRYPTOGRAPHIC EGRESS PROOF ════════════ -->
       <div id="view-egress" class="dashboard-view" style="display:none; flex-direction:column; gap:20px;">
+        <!-- Header & Policy Overview Card -->
         <div class="card" style="padding:22px;">
           <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:16px;">
             <div>
-              <span style="font-size:10px; font-weight:800; letter-spacing:1.5px; color:#00d4ff; text-transform:uppercase;">PRIVACY BY ARCHITECTURE</span>
+              <span style="font-size:10px; font-weight:800; letter-spacing:1.5px; color:#00d4ff; text-transform:uppercase;">
+                REQUIREMENT 3: PRIVACY BY ARCHITECTURE
+              </span>
               <h2 style="font-size:22px; margin:6px 0 10px;">Egress Proof &amp; Client-Side Redaction Panel</h2>
-              <p style="color:#94a3b8; font-size:13px; line-height:1.6; max-width:760px; margin:0;">
+              <p style="color:#94a3b8; font-size:13px; line-height:1.6; max-width:820px; margin:0;">
                 The Egress Proof Engine records the exact telemetry payload immediately before transmission.
-                Passwords, API tokens, database connection strings, and unapproved attributes are purged client-side inside Tier 1.
+                Passwords, database hashes, API keys (<code style="color:#f87171;">sk-...</code>), bearer tokens, and unapproved attributes
+                are purged client-side inside Tier 1 local infrastructure and <strong>never leave the customer environment</strong>.
               </p>
             </div>
-            <div style="padding:10px 16px; border-radius:8px; background:rgba(0,212,255,0.1); border:1px solid rgba(0,212,255,0.3); color:#00d4ff; font-weight:700; font-size:12px;">
-              <i class="fas fa-lock"></i> ZERO SECRETS LEAKED
+            <div style="display:flex; gap:10px; align-items:center;">
+              <div style="padding:10px 16px; border-radius:8px; background:rgba(16,185,129,0.12); border:1px solid #10b981; color:#34d399; font-weight:700; font-size:12px;">
+                <i class="fas fa-shield-check"></i> ZERO SECRETS LEAKED
+              </div>
+              <button class="nw-btn nw-btn-cyan" id="egress-inject-sim-btn" style="font-size:11px; padding:8px 14px;">
+                <i class="fas fa-flask"></i> Test Secret Injection
+              </button>
+            </div>
+          </div>
+
+          <!-- 8 Mandatory Egress KPI Metrics -->
+          <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(170px, 1fr)); gap:12px; margin-top:20px; border-top:1px solid #1e293b; padding-top:16px;">
+            <div style="background:rgba(15,23,42,0.6); padding:12px; border-radius:8px; border:1px solid rgba(255,255,255,0.05);">
+              <span style="font-size:10px; color:#94a3b8; text-transform:uppercase;">1. Events Collected</span>
+              <div style="font-size:20px; font-weight:800; color:#f8fafc; margin-top:2px;" id="stat-events-collected">4,820</div>
+              <small style="font-size:10px; color:#64748b;">Local hardware + app</small>
+            </div>
+            <div style="background:rgba(15,23,42,0.6); padding:12px; border-radius:8px; border:1px solid rgba(255,255,255,0.05);">
+              <span style="font-size:10px; color:#94a3b8; text-transform:uppercase;">2. Events Approved</span>
+              <div style="font-size:20px; font-weight:800; color:#34d399; margin-top:2px;" id="stat-events-approved">4,820</div>
+              <small style="font-size:10px; color:#34d399;">Allowlist compliant</small>
+            </div>
+            <div style="background:rgba(15,23,42,0.6); padding:12px; border-radius:8px; border:1px solid rgba(255,255,255,0.05);">
+              <span style="font-size:10px; color:#94a3b8; text-transform:uppercase;">3. Blocked by Policy</span>
+              <div style="font-size:20px; font-weight:800; color:#ef4444; margin-top:2px;" id="stat-events-blocked">0</div>
+              <small style="font-size:10px; color:#94a3b8;">Unapproved metrics</small>
+            </div>
+            <div style="background:rgba(15,23,42,0.6); padding:12px; border-radius:8px; border:1px solid rgba(255,255,255,0.05);">
+              <span style="font-size:10px; color:#94a3b8; text-transform:uppercase;">4. Fields Redacted</span>
+              <div style="font-size:20px; font-weight:800; color:#f59e0b; margin-top:2px;" id="stat-fields-redacted">4 / payload</div>
+              <small style="font-size:10px; color:#f59e0b;">Passwords, tokens, PII</small>
+            </div>
+            <div style="background:rgba(15,23,42,0.6); padding:12px; border-radius:8px; border:1px solid rgba(255,255,255,0.05);">
+              <span style="font-size:10px; color:#94a3b8; text-transform:uppercase;">5. Secrets Detected</span>
+              <div style="font-size:20px; font-weight:800; color:#f87171; margin-top:2px;" id="stat-secrets-detected">100% PURGED</div>
+              <small style="font-size:10px; color:#34d399;">Confined to Tier 1</small>
+            </div>
+            <div style="background:rgba(15,23,42,0.6); padding:12px; border-radius:8px; border:1px solid rgba(255,255,255,0.05);">
+              <span style="font-size:10px; color:#94a3b8; text-transform:uppercase;">6. Last Transmission</span>
+              <div style="font-size:14px; font-weight:700; color:#cbd5e1; margin-top:6px;" id="stat-last-tx">Just now UTC</div>
+              <small style="font-size:10px; color:#64748b;">Interval: 10s</small>
+            </div>
+            <div style="background:rgba(15,23,42,0.6); padding:12px; border-radius:8px; border:1px solid rgba(255,255,255,0.05);">
+              <span style="font-size:10px; color:#94a3b8; text-transform:uppercase;">7. Egress Policy</span>
+              <div style="font-size:13px; font-weight:800; color:#38bdf8; margin-top:6px;" id="stat-policy-status">STRICT ALLOWLIST</div>
+              <small style="font-size:10px; color:#94a3b8;">Version: v1.0</small>
+            </div>
+            <div style="background:rgba(15,23,42,0.6); padding:12px; border-radius:8px; border:1px solid rgba(255,255,255,0.05);">
+              <span style="font-size:10px; color:#94a3b8; text-transform:uppercase;">8. Collector Fleet</span>
+              <div style="font-size:13px; font-weight:800; color:#34d399; margin-top:6px;" id="stat-collector-conn">CONNECTED</div>
+              <small style="font-size:10px; color:#34d399;">Heartbeat active</small>
             </div>
           </div>
         </div>
 
+        <!-- BEFORE AND AFTER PAYLOAD COMPARISON -->
+        <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(420px, 1fr)); gap:20px;">
+          <!-- PANEL A: LOCAL RAW TELEMETRY -->
+          <div class="card" style="padding:20px; border-top:3px solid #ef4444; background:rgba(15,23,42,0.85);">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+              <div>
+                <span class="badge" style="background:rgba(239,68,68,0.18); color:#f87171; border:1px solid #ef4444; font-size:10px; font-weight:800; padding:2px 8px;">
+                  PANEL A — LOCAL RAW TELEMETRY
+                </span>
+                <h3 style="font-size:15px; margin:6px 0 2px; color:#f8fafc;">Local Collector Environment (Tier 1)</h3>
+                <small style="color:#94a3b8; font-size:11px;">Contains raw application data, unapproved attributes &amp; sensitive secrets (CONFIDENTIAL)</small>
+              </div>
+              <span class="badge" style="background:#1e293b; color:#94a3b8; font-size:10px;">NEVER TRANSMITTED</span>
+            </div>
+
+            <div style="position:relative; background:#070a14; border:1px solid #1e293b; border-radius:8px; padding:14px; font-family:'Courier New', monospace; font-size:11.5px; color:#e2e8f0; max-height:420px; overflow-y:auto; line-height:1.5;">
+              <pre id="egress-panel-a-json" style="margin:0; white-space:pre-wrap;">// Loading local raw telemetry sample...</pre>
+            </div>
+            <div style="margin-top:10px; font-size:11.5px; color:#f87171; display:flex; align-items:center; gap:8px;">
+              <i class="fas fa-lock"></i>
+              <span>Local Privacy Gate: Sensitive tokens, database credentials, and unapproved keys are purged in-memory before serialization.</span>
+            </div>
+          </div>
+
+          <!-- PANEL B: ACTUAL OUTGOING PAYLOAD -->
+          <div class="card" style="padding:20px; border-top:3px solid #10b981; background:rgba(15,23,42,0.85);">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+              <div>
+                <span class="badge" style="background:rgba(16,185,129,0.18); color:#34d399; border:1px solid #10b981; font-size:10px; font-weight:800; padding:2px 8px;">
+                  PANEL B — ACTUAL OUTGOING PAYLOAD
+                </span>
+                <h3 style="font-size:15px; margin:6px 0 2px; color:#f8fafc;">Exact Serialized JSON Sent Over Wire</h3>
+                <small style="color:#94a3b8; font-size:11px;">Inspected immediately before egress · Allowlisted metadata only</small>
+              </div>
+              <span class="badge badge-emerald" id="egress-panel-b-status">DELIVERED SAAS</span>
+            </div>
+
+            <div style="position:relative; background:#070a14; border:1px solid #1e293b; border-radius:8px; padding:14px; font-family:'Courier New', monospace; font-size:11.5px; color:#38bdf8; max-height:420px; overflow-y:auto; line-height:1.5;">
+              <pre id="egress-panel-b-json" style="margin:0; white-space:pre-wrap;">// Loading actual outbound payload...</pre>
+            </div>
+
+            <!-- Cryptographic Verification Metadata Strip -->
+            <div style="margin-top:12px; border-top:1px solid #1e293b; padding-top:10px; display:flex; flex-direction:column; gap:6px; font-size:11.5px;">
+              <div style="display:flex; justify-content:space-between;">
+                <span style="color:#64748b;">SHA-256 HMAC Proof:</span>
+                <code style="color:#34d399;" id="egress-proof-hash">9f82d1c7a4e0318b...</code>
+              </div>
+              <div style="display:flex; justify-content:space-between;">
+                <span style="color:#64748b;">Payload Size:</span>
+                <strong style="color:#cbd5e1;" id="egress-proof-size">1,184 Bytes</strong>
+              </div>
+              <div style="display:flex; justify-content:space-between;">
+                <span style="color:#64748b;">Policy Decision:</span>
+                <span class="badge" id="egress-proof-decision" style="background:rgba(16,185,129,0.15); color:#34d399; border:1px solid #10b981; font-size:10px;">APPROVED_WITH_REDACTION</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- CRYPTOGRAPHIC TRANSMISSION AUDIT LOG TABLE -->
         <div class="card">
           <div class="card-header">
             <div class="card-title">
               <i class="fas fa-shield-halved card-icon"></i>Cryptographic Transmission Audit Log
             </div>
-            <span style="font-size:11px; color:#64748b;">Verified Tier 1 Metadata Payloads</span>
+            <span style="font-size:11px; color:#64748b;">Verified Tier 1 Metadata Payloads with Cryptographic Proofs</span>
           </div>
           <div class="card-body">
             <div style="overflow-x:auto;">
@@ -995,10 +1209,11 @@
                     <th>APPROVED FIELDS</th>
                     <th>REDACTED / BLOCKED</th>
                     <th>DELIVERY STATUS</th>
+                    <th>INSPECT PROOF</th>
                   </tr>
                 </thead>
                 <tbody id="egress-audit-tbody-full">
-                  <tr><td colspan="6" style="text-align:center;color:#64748b;padding:16px;">Loading egress proofs...</td></tr>
+                  <tr><td colspan="7" style="text-align:center;color:#64748b;padding:16px;">Loading egress proofs...</td></tr>
                 </tbody>
               </table>
             </div>

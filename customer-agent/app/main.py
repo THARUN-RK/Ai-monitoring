@@ -8,6 +8,7 @@ import json
 import requests
 from pathlib import Path
 from datetime import datetime, timezone
+from typing import Any
 
 try:
     import psutil
@@ -21,9 +22,15 @@ _agent_root = _current_dir.parent
 if str(_agent_root) not in sys.path:
     sys.path.insert(0, str(_agent_root))
 
-from app.policy import sanitize_event, build_approved_metadata
+from app.policy import (
+    sanitize_event,
+    build_approved_metadata,
+    compute_payload_hash,
+    generate_redacted_preview,
+)
 from app.buffer import LocalBuffer
 from app.egress_proof import EgressProofManager
+from app.stream_consumer import OrganiserStreamConsumer
 
 
 API_URL = os.getenv("CICADA_API_URL", "https://ai-monitoring-5n2p.onrender.com").rstrip("/")
@@ -33,9 +40,17 @@ TENANT_ID = os.getenv("TENANT_ID", "demo-tenant")
 COLLECTION_INTERVAL = int(os.getenv("COLLECTION_INTERVAL", "10"))
 INJECT_TEST_SECRET = os.getenv("INJECT_TEST_SECRET", "true").lower() in ("true", "1", "yes")
 
-# Initialize storage and egress proof components
+# Sequence tracking for Requirement 1
+_sequence_counter: int = 0
+
+# Initialize storage, egress proof, and organiser stream consumer
 buffer = LocalBuffer("data/buffer")
 egress_manager = EgressProofManager("data/egress_proof.jsonl")
+stream_consumer = OrganiserStreamConsumer(
+    central_api_url=API_URL,
+    central_api_key=API_KEY,
+    tenant_id=TENANT_ID,
+)
 
 
 def register_collector() -> bool:
@@ -143,10 +158,14 @@ def flush_local_buffer() -> int:
 def run_collection_cycle(cycle_num: int) -> dict[str, Any]:
     """
     Executes one complete telemetry cycle:
-    Collection -> Filtering & Redaction -> Egress Proof -> API Ingestion / Buffer.
+    Collection -> Timestamp Stamping -> Filtering & Redaction -> Egress Proof -> API Ingestion / Buffer.
     """
+    global _sequence_counter
     print(f"\n{'='*20} TELEMETRY CYCLE {cycle_num} {'='*20}")
-    observed_at = datetime.now(timezone.utc).isoformat()
+    
+    # Requirement 1: Precise UTC timestamps
+    source_timestamp = datetime.now(timezone.utc).isoformat()
+    collector_timestamp = datetime.now(timezone.utc).isoformat()
 
     # Step 2: Collect metrics
     laptop_metrics = collect_real_metrics()
@@ -156,11 +175,15 @@ def run_collection_cycle(cycle_num: int) -> dict[str, Any]:
 
     # Build raw events for real hardware metrics
     for name, value, unit in laptop_metrics:
+        _sequence_counter += 1
         raw_events.append({
             "event_id": str(uuid.uuid4()),
             "tenant_id": TENANT_ID,
             "collector_id": COLLECTOR_ID,
-            "timestamp": observed_at,
+            "timestamp": source_timestamp,
+            "source_timestamp": source_timestamp,
+            "collector_timestamp": collector_timestamp,
+            "sequence_number": _sequence_counter,
             "metric_name": name,
             "metric_value": value,
             "unit": unit,
@@ -177,11 +200,15 @@ def run_collection_cycle(cycle_num: int) -> dict[str, Any]:
         ("memory_utilization", 0.55, "ratio"),
         *checkout_metrics,
     ]:
+        _sequence_counter += 1
         raw_events.append({
             "event_id": str(uuid.uuid4()),
             "tenant_id": TENANT_ID,
             "collector_id": COLLECTOR_ID,
-            "timestamp": observed_at,
+            "timestamp": source_timestamp,
+            "source_timestamp": source_timestamp,
+            "collector_timestamp": collector_timestamp,
+            "sequence_number": _sequence_counter,
             "metric_name": name,
             "metric_value": value,
             "unit": unit,
@@ -216,16 +243,32 @@ def run_collection_cycle(cycle_num: int) -> dict[str, Any]:
 
     payload_id = str(uuid.uuid4())
 
-    # Build outbound payload (approved metadata only!)
-    outbound_payload = {
+    # Build temporary outbound dictionary for hash computation
+    core_outbound = {
         "payload_id": payload_id,
         "collector_id": COLLECTOR_ID,
-        "timestamp": observed_at,
+        "timestamp": collector_timestamp,
+        "collector_timestamp": collector_timestamp,
         "records": sanitized_events,
         "approved_fields_count": len(all_approved_fields),
         "rejected_fields_count": len(all_rejected_fields) + len(all_redacted_fields),
         "redacted_fields": list(set(all_redacted_fields)),
         "sanitized_sample": json.dumps(sanitized_events[0]) if sanitized_events else "{}",
+        "policy_version": "v1.0-strict-allowlist",
+        "policy_decision": "APPROVED_WITH_REDACTION" if (all_redacted_fields or all_rejected_fields) else "APPROVED",
+    }
+
+    # Requirement 3: Exact payload serialization & cryptographic hash
+    payload_hash = compute_payload_hash(core_outbound)
+    payload_size_bytes = len(json.dumps(core_outbound, sort_keys=True, separators=(",", ":")).encode("utf-8"))
+    safe_raw_preview = generate_redacted_preview(raw_events[0]) if raw_events else {}
+
+    outbound_payload = {
+        **core_outbound,
+        "payload_hash": payload_hash,
+        "payload_size_bytes": payload_size_bytes,
+        "raw_sample_redacted": json.dumps(safe_raw_preview),
+        "exact_outbound_payload": json.dumps(core_outbound, indent=2),
     }
 
     # Step 4: Record Egress Proof immediately before transmission
@@ -239,12 +282,14 @@ def run_collection_cycle(cycle_num: int) -> dict[str, Any]:
         rejected_fields=all_rejected_fields,
         outbound_payload=outbound_payload,
         delivery_status="transmitting",
+        policy_version="v1.0-strict-allowlist",
     )
 
     print(f"[EGRESS PROOF] Payload ID: {payload_id}")
     print(f"[EGRESS PROOF] Approved Fields Count: {len(all_approved_fields)}")
     print(f"[EGRESS PROOF] Redacted/Blocked Secrets: {list(set(all_redacted_fields))}")
     print(f"[EGRESS PROOF] Rejected Unknown Fields: {list(set(all_rejected_fields))}")
+    print(f"[EGRESS PROOF] SHA-256 HMAC Proof: {payload_hash[:16]}... (Size: {payload_size_bytes}B)")
 
     # Step 5 & 8: Send to API with local buffer fallback
     headers = {
@@ -256,7 +301,7 @@ def run_collection_cycle(cycle_num: int) -> dict[str, Any]:
     api_response = None
 
     try:
-        # 1. First attempt modern Step 5 endpoint: /api/v1/telemetry/ingest
+        # Ingest endpoint: /api/v1/telemetry/ingest
         response = requests.post(
             f"{API_URL}/api/v1/telemetry/ingest",
             json=outbound_payload,
@@ -269,13 +314,13 @@ def run_collection_cycle(cycle_num: int) -> dict[str, Any]:
             api_response = response.json()
             print(f"[API RESPONSE] Ingested successfully via /api/v1/telemetry/ingest: {api_response}")
         else:
-            # 2. Backward-compatible fallback: /api/v1/agent/batches
+            # Backward-compatible fallback: /api/v1/agent/batches
             print(f"[INGEST NOTICE] Ingest returned {response.status_code}, trying legacy batch endpoint...")
             legacy_batch = {
                 "schema_version": "1.0",
                 "batch_id": payload_id,
-                "sent_at": observed_at,
-                "policy_version": "demo-allowlist-v1",
+                "sent_at": collector_timestamp,
+                "policy_version": "v1.0-strict-allowlist",
                 "records": [
                     {
                         "event_id": str(uuid.uuid4()),
@@ -313,6 +358,7 @@ def run_collection_cycle(cycle_num: int) -> dict[str, Any]:
         "payload_id": payload_id,
         "delivery_status": delivery_status,
         "events_sent": len(sanitized_events),
+        "payload_hash": payload_hash,
     }
 
 
@@ -327,6 +373,9 @@ def monitoring_loop():
 
     # Initial collector registration
     register_collector()
+
+    # Start Organiser Stream Consumer if configured
+    stream_consumer.start()
 
     cycle = 0
     while True:

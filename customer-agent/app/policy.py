@@ -1,4 +1,7 @@
 from __future__ import annotations
+import hashlib
+import hmac
+import json
 import re
 from typing import Any
 
@@ -13,6 +16,9 @@ APPROVED_FIELDS = {
     "collector_id",
     "timestamp",
     "observed_at",
+    "source_timestamp",
+    "collector_timestamp",
+    "sequence_number",
     "metric_name",
     "metric_value",
     "severity",
@@ -103,7 +109,7 @@ def sanitize_event(
     if not (-1_000_000_000 <= metric_value <= 1_000_000_000):
         return None, approved_fields, redacted_fields, rejected_fields
 
-    # 3. Construct clean outbound sanitized event
+    # 3. Construct clean outbound sanitized event (approved metadata ONLY)
     sanitized: dict[str, Any] = {
         "event_id": str(raw_event.get("event_id", "")),
         "metric_name": metric_name,
@@ -116,10 +122,21 @@ def sanitize_event(
         "event_category": str(raw_event.get("event_category", "system"))[:32],
     }
 
+    # Timestamp preservation
     if "timestamp" in raw_event:
         sanitized["timestamp"] = str(raw_event["timestamp"])
     elif "observed_at" in raw_event:
         sanitized["timestamp"] = str(raw_event["observed_at"])
+
+    if "source_timestamp" in raw_event and raw_event["source_timestamp"]:
+        sanitized["source_timestamp"] = str(raw_event["source_timestamp"])
+    if "collector_timestamp" in raw_event and raw_event["collector_timestamp"]:
+        sanitized["collector_timestamp"] = str(raw_event["collector_timestamp"])
+    if "sequence_number" in raw_event:
+        try:
+            sanitized["sequence_number"] = int(raw_event["sequence_number"])
+        except (ValueError, TypeError):
+            sanitized["sequence_number"] = 0
 
     if "tenant_id" in raw_event:
         sanitized["tenant_id"] = str(raw_event["tenant_id"])[:64]
@@ -127,6 +144,31 @@ def sanitize_event(
         sanitized["collector_id"] = str(raw_event["collector_id"])[:64]
 
     return sanitized, approved_fields, redacted_fields, rejected_fields
+
+
+def generate_redacted_preview(raw_event: dict[str, Any]) -> dict[str, Any]:
+    """
+    Produces a safe, synthetic or appropriately masked preview of the raw event for Panel A.
+    Sensitive credentials are never exposed in plaintext; they are marked with protective tokens.
+    """
+    safe_preview: dict[str, Any] = {}
+    for k, v in raw_event.items():
+        k_str = str(k)
+        v_str = str(v)
+        secrets = detect_secrets(f"{k_str}={v_str}")
+        if secrets or k_str.lower() in ("password", "token", "secret", "api_key", "raw_logs", "user_email"):
+            safe_preview[k_str] = f"[BLOCKED_LOCALLY - SENSITIVE_{','.join(secrets or ['SECRET']).upper()}_SCRUBBED]"
+        else:
+            safe_preview[k_str] = v
+    return safe_preview
+
+
+def compute_payload_hash(payload_dict: dict[str, Any], secret_pepper: str = "cicada-egress-proof-v1") -> str:
+    """
+    Computes a deterministic SHA-256 HMAC for the exact serialized payload immediately before egress.
+    """
+    canonical_json = json.dumps(payload_dict, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hmac.new(secret_pepper.encode("utf-8"), canonical_json, hashlib.sha256).hexdigest()
 
 
 LEGACY_ALLOWED_METRICS = {

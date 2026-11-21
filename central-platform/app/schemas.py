@@ -71,6 +71,9 @@ class TelemetryEventIn(StrictModel):
     collector_id: Optional[str] = Field(default=None, max_length=64)
     timestamp: Optional[datetime] = None
     observed_at: Optional[datetime] = None
+    source_timestamp: Optional[datetime] = None
+    collector_timestamp: Optional[datetime] = None
+    sequence_number: Optional[int] = Field(default=0, ge=0)
     metric_name: str = Field(min_length=1, max_length=64)
     metric_value: float
     unit: str = Field(default="ratio", max_length=24)
@@ -91,11 +94,18 @@ class TelemetryIngestIn(StrictModel):
     payload_id: str = Field(min_length=1, max_length=64)
     collector_id: str = Field(min_length=1, max_length=64)
     timestamp: datetime
+    collector_timestamp: Optional[datetime] = None
     records: list[TelemetryEventIn] = Field(min_length=1, max_length=500)
     approved_fields_count: int = Field(default=0, ge=0)
     rejected_fields_count: int = Field(default=0, ge=0)
     redacted_fields: list[str] = Field(default_factory=list)
     sanitized_sample: str = Field(default="")
+    policy_version: Optional[str] = Field(default="v1.0-allowlist", max_length=64)
+    policy_decision: Optional[str] = Field(default="APPROVED", max_length=32)
+    payload_hash: Optional[str] = Field(default="", max_length=64)
+    payload_size_bytes: Optional[int] = Field(default=0, ge=0)
+    raw_sample_redacted: Optional[str] = Field(default="")
+    exact_outbound_payload: Optional[str] = Field(default="")
 
 class EgressAuditOut(BaseModel):
     payload_id: str
@@ -105,7 +115,58 @@ class EgressAuditOut(BaseModel):
     rejected_fields_count: int
     delivery_status: str
     api_response_status: int
-    sanitized_sample: str
+    policy_version: str = "v1.0-allowlist"
+    policy_decision: str = "APPROVED"
+    payload_hash: str = ""
+    payload_size_bytes: int = 0
+    fields_permitted: list[str] = Field(default_factory=list)
+    fields_redacted: list[str] = Field(default_factory=list)
+    sanitized_sample: str = ""
+    raw_sample_redacted: str = "{}"
+    exact_outbound_payload: str = "{}"
+
+
+# -------------------------------------------------------------------------
+# Requirement 1: Real-time Telemetry Timestamp Status Schemas
+# -------------------------------------------------------------------------
+
+class RealtimeTelemetryStatusOut(BaseModel):
+    last_event_id: str
+    source_timestamp: Optional[str] = None
+    collector_timestamp: Optional[str] = None
+    ingestion_timestamp: str
+    processing_timestamp: str
+    ingestion_delay_ms: float
+    processing_delay_ms: float
+    total_e2e_delay_ms: float
+    collector_heartbeat_age_seconds: float
+    telemetry_freshness_status: str  # FRESH, AGING, STALE, EXPIRED
+    delayed_events_count: int
+    duplicate_events_count: int
+    out_of_order_count: int
+    total_events_ingested: int
+    sequence_number: int
+    is_delayed: bool
+    is_out_of_order: bool
+
+
+# -------------------------------------------------------------------------
+# Requirement 2: Organiser Stream Connection Status Schemas
+# -------------------------------------------------------------------------
+
+class StreamStatusOut(BaseModel):
+    stream_name: str
+    endpoint_url: str
+    transport_protocol: str
+    status: str  # CONNECTED, CONNECTING, RECONNECTING, DISCONNECTED, ERROR
+    last_event_id: Optional[str] = None
+    last_event_timestamp: Optional[str] = None
+    events_received_count: int = 0
+    duplicate_events_count: int = 0
+    delayed_events_count: int = 0
+    reconnect_attempts: int = 0
+    last_heartbeat: str
+    error_message: str = ""
 
 
 # -------------------------------------------------------------------------
@@ -238,5 +299,3 @@ class IncidentOut(BaseModel):
 class IncidentStatusUpdateIn(BaseModel):
     status: Literal["Open", "Investigating", "Resolved", "Closed"]
     note: Optional[str] = None
-
-

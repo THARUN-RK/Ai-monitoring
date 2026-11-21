@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from sqlalchemy import DateTime, Float, Integer, String, Text, UniqueConstraint, Index
+from sqlalchemy import Boolean, DateTime, Float, Integer, String, Text, UniqueConstraint, Index
 from sqlalchemy.orm import Mapped, mapped_column
 from app.database import Base
 
@@ -9,12 +9,13 @@ class MetricRecord(Base):
         UniqueConstraint("tenant_id", "event_id", name="uq_tenant_event"),
         UniqueConstraint("tenant_id", "batch_id", "event_id", name="uq_tenant_batch_event"),
         Index("ix_tenant_observed", "tenant_id", "observed_at"),
+        Index("ix_tenant_sequence", "tenant_id", "agent_id", "sequence_number"),
     )
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     tenant_id: Mapped[str] = mapped_column(String(64), nullable=False)
     agent_id: Mapped[str] = mapped_column(String(64), nullable=False)
-    batch_id: Mapped[str] = mapped_column(String(36), nullable=False)
-    event_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    batch_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    event_id: Mapped[str] = mapped_column(String(64), nullable=False)
     observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     service: Mapped[str] = mapped_column(String(64), nullable=False)
     environment: Mapped[str] = mapped_column(String(64), nullable=False)
@@ -26,6 +27,21 @@ class MetricRecord(Base):
     received_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
     )
+    # Requirement 1: Timestamp-based Real-time Measurement
+    source_timestamp: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    collector_timestamp: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    ingestion_timestamp: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
+    )
+    processing_timestamp: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
+    )
+    sequence_number: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    ingestion_delay_ms: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    processing_delay_ms: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    total_e2e_delay_ms: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    is_delayed: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    is_out_of_order: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
 
 class CollectorRecord(Base):
@@ -46,6 +62,11 @@ class CollectorRecord(Base):
     registered_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
     )
+    last_sequence_number: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    total_events_received: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    duplicate_events_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    delayed_events_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    out_of_order_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
 
 class EgressAuditRecord(Base):
@@ -66,8 +87,42 @@ class EgressAuditRecord(Base):
     rejected_fields_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     delivery_status: Mapped[str] = mapped_column(String(32), default="delivered", nullable=False)
     api_response_status: Mapped[int] = mapped_column(Integer, default=202, nullable=False)
+    policy_version: Mapped[str] = mapped_column(String(64), default="v1.0-allowlist", nullable=False)
+    policy_decision: Mapped[str] = mapped_column(String(32), default="APPROVED", nullable=False)
+    payload_hash: Mapped[str] = mapped_column(String(64), default="", nullable=False)
+    payload_size_bytes: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    fields_permitted: Mapped[str] = mapped_column(Text, default="[]", nullable=False)
+    fields_redacted: Mapped[str] = mapped_column(Text, default="[]", nullable=False)
     sanitized_sample: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    raw_sample_redacted: Mapped[str] = mapped_column(Text, default="{}", nullable=False)
+    exact_outbound_payload: Mapped[str] = mapped_column(Text, default="{}", nullable=False)
 
+
+class StreamConnectionRecord(Base):
+    __tablename__ = "stream_connection_records"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "stream_name", name="uq_tenant_stream"),
+        Index("ix_stream_tenant_status", "tenant_id", "status"),
+    )
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    stream_name: Mapped[str] = mapped_column(String(64), default="organiser-telemetry-stream", nullable=False)
+    endpoint_url: Mapped[str] = mapped_column(String(255), default="https://stream.cicada2026.org/telemetry/live", nullable=False)
+    transport_protocol: Mapped[str] = mapped_column(String(32), default="SSE/HTTP", nullable=False)
+    status: Mapped[str] = mapped_column(String(24), default="DISCONNECTED", nullable=False)
+    last_event_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    last_event_timestamp: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    events_received_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    duplicate_events_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    delayed_events_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    reconnect_attempts: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    last_heartbeat: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
+    )
+    error_message: Mapped[str] = mapped_column(String(255), default="", nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
+    )
 
 
 class AnomalyRecord(Base):
@@ -139,5 +194,3 @@ class IncidentRecord(Base):
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
     )
     resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-
-

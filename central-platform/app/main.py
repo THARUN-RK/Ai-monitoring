@@ -4,17 +4,19 @@ from typing import Any, Optional
 from datetime import datetime, timezone
 from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy import select, desc
+from sqlalchemy import select, desc, func
 from sqlalchemy.orm import Session
 
-from app.database import Base, engine, get_db
-from app.models import MetricRecord, CollectorRecord, EgressAuditRecord, AnomalyRecord, HealthTransitionRecord, IncidentRecord
+from app.database import Base, engine, get_db, init_db_schema
+from app.models import MetricRecord, CollectorRecord, EgressAuditRecord, AnomalyRecord, HealthTransitionRecord, IncidentRecord, StreamConnectionRecord
 from app.schemas import (
     Batch,
     CollectorRegisterIn,
     CollectorHealthOut,
     TelemetryIngestIn,
     EgressAuditOut,
+    RealtimeTelemetryStatusOut,
+    StreamStatusOut,
     AnomalyDetailOut,
     AIOpsPreviewOut,
     SystemHealthOut,
@@ -47,7 +49,7 @@ from app.incidents import (
 # DATABASE INITIALIZATION
 # --------------------------------------------------
 
-Base.metadata.create_all(bind=engine)
+init_db_schema()
 
 
 # --------------------------------------------------
@@ -200,9 +202,38 @@ def ingest_telemetry(
     db: Session = Depends(get_db),
 ):
     tenant_id = identity["tenant_id"]
-    now = datetime.now(timezone.utc)
+    ingestion_time = datetime.now(timezone.utc)
 
-    # 1. Enforce unique payload IDs to prevent duplicate ingestion.
+    # 1. Fetch or initialize collector record
+    collector = db.scalar(
+        select(CollectorRecord)
+        .where(
+            CollectorRecord.tenant_id == tenant_id,
+            CollectorRecord.collector_id == payload.collector_id,
+        )
+        .limit(1)
+    )
+    if collector:
+        collector.last_heartbeat = ingestion_time
+        collector.status = "online"
+    else:
+        collector = CollectorRecord(
+            tenant_id=tenant_id,
+            collector_id=payload.collector_id,
+            name=f"Collector-{payload.collector_id[:8]}",
+            environment="production",
+            status="online",
+            last_heartbeat=ingestion_time,
+            registered_at=ingestion_time,
+            last_sequence_number=0,
+            total_events_received=0,
+            duplicate_events_count=0,
+            delayed_events_count=0,
+            out_of_order_count=0,
+        )
+        db.add(collector)
+
+    # 2. Enforce unique payload IDs to prevent duplicate ingestion
     existing_egress = db.scalar(
         select(EgressAuditRecord)
         .where(
@@ -213,6 +244,8 @@ def ingest_telemetry(
     )
 
     if existing_egress:
+        collector.duplicate_events_count += len(payload.records)
+        db.commit()
         return {
             "payload_id": payload.payload_id,
             "status": "duplicate",
@@ -220,31 +253,82 @@ def ingest_telemetry(
             "message": "Payload already ingested previously",
         }
 
-    # 2. Update or register collector heartbeat
-    collector = db.scalar(
-        select(CollectorRecord)
-        .where(
-            CollectorRecord.tenant_id == tenant_id,
-            CollectorRecord.collector_id == payload.collector_id,
-        )
-        .limit(1)
-    )
-    if collector:
-        collector.last_heartbeat = now
-        collector.status = "online"
+    # 3. Calculate ingestion delay
+    col_ts = payload.collector_timestamp or payload.timestamp
+    if col_ts.tzinfo is None:
+        col_ts = col_ts.replace(tzinfo=timezone.utc)
     else:
-        collector = CollectorRecord(
-            tenant_id=tenant_id,
-            collector_id=payload.collector_id,
-            name=f"Collector-{payload.collector_id[:8]}",
-            environment="production",
-            status="online",
-            last_heartbeat=now,
-            registered_at=now,
-        )
-        db.add(collector)
+        col_ts = col_ts.astimezone(timezone.utc)
+    ingestion_delay_ms = max(0.0, (ingestion_time - col_ts).total_seconds() * 1000.0)
 
-    # 3. Create sanitized sample string for Egress Proof verification
+    # 4. Check sequence and duplicates
+    existing_event_ids = set(
+        db.scalars(
+            select(MetricRecord.event_id)
+            .where(
+                MetricRecord.tenant_id == tenant_id,
+                MetricRecord.event_id.in_([r.event_id for r in payload.records])
+            )
+        ).all()
+    )
+
+    processing_time = datetime.now(timezone.utc)
+    processing_delay_ms = max(0.0, (processing_time - ingestion_time).total_seconds() * 1000.0)
+
+    rows = []
+    for r in payload.records:
+        if r.event_id in existing_event_ids:
+            collector.duplicate_events_count += 1
+            continue
+
+        src_ts = r.source_timestamp or r.timestamp or r.observed_at or col_ts
+        if src_ts.tzinfo is None:
+            src_ts = src_ts.replace(tzinfo=timezone.utc)
+        else:
+            src_ts = src_ts.astimezone(timezone.utc)
+
+        total_e2e_delay_ms = max(0.0, (processing_time - src_ts).total_seconds() * 1000.0)
+        is_delayed = total_e2e_delay_ms > 15000.0 or ingestion_delay_ms > 10000.0
+        if is_delayed:
+            collector.delayed_events_count += 1
+
+        is_out_of_order = False
+        seq = r.sequence_number or 0
+        if seq > 0:
+            if seq <= collector.last_sequence_number:
+                is_out_of_order = True
+                collector.out_of_order_count += 1
+            else:
+                collector.last_sequence_number = max(collector.last_sequence_number, seq)
+
+        rows.append(
+            MetricRecord(
+                tenant_id=tenant_id,
+                agent_id=payload.collector_id,
+                batch_id=payload.payload_id,
+                event_id=r.event_id,
+                observed_at=src_ts.replace(tzinfo=None),
+                service=r.service,
+                environment=r.environment,
+                metric_name=r.metric_name,
+                metric_value=r.metric_value,
+                unit=r.unit,
+                window_seconds=10,
+                sample_count=1,
+                source_timestamp=src_ts.replace(tzinfo=None),
+                collector_timestamp=col_ts.replace(tzinfo=None),
+                ingestion_timestamp=ingestion_time.replace(tzinfo=None),
+                processing_timestamp=processing_time.replace(tzinfo=None),
+                sequence_number=seq,
+                ingestion_delay_ms=round(ingestion_delay_ms, 2),
+                processing_delay_ms=round(processing_delay_ms, 2),
+                total_e2e_delay_ms=round(total_e2e_delay_ms, 2),
+                is_delayed=is_delayed,
+                is_out_of_order=is_out_of_order,
+            )
+        )
+
+    # 5. Save Egress Audit Record
     sanitized_sample = payload.sanitized_sample
     if not sanitized_sample and payload.records:
         first = payload.records[0]
@@ -256,44 +340,31 @@ def ingest_telemetry(
             "service": first.service,
         })
 
-    # 4. Save Egress Audit Record
+    fields_perm = ["event_id", "source_timestamp", "collector_timestamp", "sequence_number", "metric_name", "metric_value", "unit", "service", "environment", "severity", "health_status"]
+    fields_red = payload.redacted_fields
+
     audit_row = EgressAuditRecord(
         tenant_id=tenant_id,
         collector_id=payload.collector_id,
         payload_id=payload.payload_id,
-        sent_at=payload.timestamp,
-        received_at=now,
+        sent_at=col_ts.replace(tzinfo=None),
+        received_at=ingestion_time.replace(tzinfo=None),
         approved_fields_count=payload.approved_fields_count or len(payload.records),
         rejected_fields_count=payload.rejected_fields_count,
         delivery_status="delivered",
         api_response_status=202,
+        policy_version=payload.policy_version or "v1.0-strict-allowlist",
+        policy_decision=payload.policy_decision or ("APPROVED_WITH_REDACTION" if fields_red else "APPROVED"),
+        payload_hash=payload.payload_hash or "",
+        payload_size_bytes=payload.payload_size_bytes or len(json.dumps(payload.model_dump(), default=str).encode("utf-8")),
+        fields_permitted=json.dumps(fields_perm),
+        fields_redacted=json.dumps(fields_red),
         sanitized_sample=sanitized_sample[:1000],
+        raw_sample_redacted=payload.raw_sample_redacted or "{}",
+        exact_outbound_payload=payload.exact_outbound_payload or json.dumps(payload.model_dump(), default=str, indent=2),
     )
     db.add(audit_row)
-
-    # 5. Persist telemetry records
-    rows = []
-    for r in payload.records:
-        obs_at = r.observed_at or r.timestamp or now
-        if obs_at.tzinfo is not None:
-            obs_at = obs_at.astimezone(timezone.utc).replace(tzinfo=None)
-
-        rows.append(
-            MetricRecord(
-                tenant_id=tenant_id,
-                agent_id=payload.collector_id,
-                batch_id=payload.payload_id,
-                event_id=r.event_id,
-                observed_at=obs_at,
-                service=r.service,
-                environment=r.environment,
-                metric_name=r.metric_name,
-                metric_value=r.metric_value,
-                unit=r.unit,
-                window_seconds=10,
-                sample_count=1,
-            )
-        )
+    collector.total_events_received += len(rows)
 
     try:
         db.add_all(rows)
@@ -309,6 +380,8 @@ def ingest_telemetry(
         "payload_id": payload.payload_id,
         "status": "accepted",
         "accepted_records": len(rows),
+        "ingestion_delay_ms": round(ingestion_delay_ms, 2),
+        "processing_delay_ms": round(processing_delay_ms, 2),
     }
 
 
@@ -448,19 +521,267 @@ def get_egress_audit(
         .limit(limit)
     ).all()
 
-    return [
-        EgressAuditOut(
-            payload_id=rec.payload_id,
-            collector_id=rec.collector_id,
-            sent_at=rec.sent_at.isoformat() if hasattr(rec.sent_at, "isoformat") else str(rec.sent_at),
-            approved_fields_count=rec.approved_fields_count,
-            rejected_fields_count=rec.rejected_fields_count,
-            delivery_status=rec.delivery_status,
-            api_response_status=rec.api_response_status,
-            sanitized_sample=rec.sanitized_sample or "{}",
+    result = []
+    for rec in records:
+        perm = []
+        red = []
+        try:
+            perm = json.loads(rec.fields_permitted)
+        except Exception:
+            pass
+        try:
+            red = json.loads(rec.fields_redacted)
+        except Exception:
+            pass
+
+        result.append(
+            EgressAuditOut(
+                payload_id=rec.payload_id,
+                collector_id=rec.collector_id,
+                sent_at=rec.sent_at.isoformat() if hasattr(rec.sent_at, "isoformat") else str(rec.sent_at),
+                approved_fields_count=rec.approved_fields_count,
+                rejected_fields_count=rec.rejected_fields_count,
+                delivery_status=rec.delivery_status,
+                api_response_status=rec.api_response_status,
+                policy_version=rec.policy_version or "v1.0-strict-allowlist",
+                policy_decision=rec.policy_decision or "APPROVED",
+                payload_hash=rec.payload_hash or "",
+                payload_size_bytes=rec.payload_size_bytes or 0,
+                fields_permitted=perm,
+                fields_redacted=red,
+                sanitized_sample=rec.sanitized_sample or "{}",
+                raw_sample_redacted=rec.raw_sample_redacted or "{}",
+                exact_outbound_payload=rec.exact_outbound_payload or "{}",
+            )
         )
-        for rec in records
-    ]
+    return result
+
+
+@app.get("/api/v1/telemetry/egress/{payload_id}", response_model=EgressAuditOut)
+def get_single_egress_proof(
+    payload_id: str,
+    identity=Depends(authenticate_agent),
+    db: Session = Depends(get_db),
+):
+    tenant_id = identity["tenant_id"]
+    rec = db.scalar(
+        select(EgressAuditRecord)
+        .where(EgressAuditRecord.tenant_id == tenant_id, EgressAuditRecord.payload_id == payload_id)
+        .limit(1)
+    )
+    if not rec:
+        raise HTTPException(status_code=404, detail="Egress proof record not found")
+    
+    perm = []
+    red = []
+    try:
+        perm = json.loads(rec.fields_permitted)
+    except Exception:
+        pass
+    try:
+        red = json.loads(rec.fields_redacted)
+    except Exception:
+        pass
+
+    return EgressAuditOut(
+        payload_id=rec.payload_id,
+        collector_id=rec.collector_id,
+        sent_at=rec.sent_at.isoformat() if hasattr(rec.sent_at, "isoformat") else str(rec.sent_at),
+        approved_fields_count=rec.approved_fields_count,
+        rejected_fields_count=rec.rejected_fields_count,
+        delivery_status=rec.delivery_status,
+        api_response_status=rec.api_response_status,
+        policy_version=rec.policy_version or "v1.0-strict-allowlist",
+        policy_decision=rec.policy_decision or "APPROVED",
+        payload_hash=rec.payload_hash or "",
+        payload_size_bytes=rec.payload_size_bytes or 0,
+        fields_permitted=perm,
+        fields_redacted=red,
+        sanitized_sample=rec.sanitized_sample or "{}",
+        raw_sample_redacted=rec.raw_sample_redacted or "{}",
+        exact_outbound_payload=rec.exact_outbound_payload or "{}",
+    )
+
+
+# --------------------------------------------------
+# REQUIREMENT 1: REAL-TIME TELEMETRY STATUS
+# --------------------------------------------------
+
+@app.get("/api/v1/telemetry/realtime", response_model=RealtimeTelemetryStatusOut)
+def get_realtime_status(
+    identity=Depends(authenticate_agent),
+    db: Session = Depends(get_db),
+):
+    tenant_id = identity["tenant_id"]
+    now = datetime.now(timezone.utc)
+
+    latest_metric = db.scalar(
+        select(MetricRecord)
+        .where(MetricRecord.tenant_id == tenant_id)
+        .order_by(MetricRecord.received_at.desc())
+        .limit(1)
+    )
+
+    collector = db.scalar(
+        select(CollectorRecord)
+        .where(CollectorRecord.tenant_id == tenant_id)
+        .order_by(CollectorRecord.last_heartbeat.desc())
+        .limit(1)
+    )
+
+    total_events = db.scalar(
+        select(func.count(MetricRecord.id)).where(MetricRecord.tenant_id == tenant_id)
+    ) or 0
+
+    if not latest_metric:
+        return RealtimeTelemetryStatusOut(
+            last_event_id="NONE",
+            source_timestamp=None,
+            collector_timestamp=None,
+            ingestion_timestamp=now.isoformat(),
+            processing_timestamp=now.isoformat(),
+            ingestion_delay_ms=0.0,
+            processing_delay_ms=0.0,
+            total_e2e_delay_ms=0.0,
+            collector_heartbeat_age_seconds=0.0,
+            telemetry_freshness_status="WAITING",
+            delayed_events_count=0,
+            duplicate_events_count=0,
+            out_of_order_count=0,
+            total_events_ingested=0,
+            sequence_number=0,
+            is_delayed=False,
+            is_out_of_order=False,
+        )
+
+    col_hb = collector.last_heartbeat if collector else latest_metric.received_at
+    if col_hb.tzinfo is None:
+        col_hb = col_hb.replace(tzinfo=timezone.utc)
+    heartbeat_age = max(0.0, (now - col_hb).total_seconds())
+
+    if heartbeat_age < 15.0:
+        freshness = "FRESH"
+    elif heartbeat_age < 30.0:
+        freshness = "AGING"
+    elif heartbeat_age < 60.0:
+        freshness = "STALE"
+    else:
+        freshness = "EXPIRED"
+
+    return RealtimeTelemetryStatusOut(
+        last_event_id=latest_metric.event_id,
+        source_timestamp=latest_metric.source_timestamp.isoformat() if latest_metric.source_timestamp else latest_metric.observed_at.isoformat(),
+        collector_timestamp=latest_metric.collector_timestamp.isoformat() if latest_metric.collector_timestamp else latest_metric.received_at.isoformat(),
+        ingestion_timestamp=latest_metric.ingestion_timestamp.isoformat() if latest_metric.ingestion_timestamp else latest_metric.received_at.isoformat(),
+        processing_timestamp=latest_metric.processing_timestamp.isoformat() if latest_metric.processing_timestamp else latest_metric.received_at.isoformat(),
+        ingestion_delay_ms=round(latest_metric.ingestion_delay_ms, 2),
+        processing_delay_ms=round(latest_metric.processing_delay_ms, 2),
+        total_e2e_delay_ms=round(latest_metric.total_e2e_delay_ms, 2),
+        collector_heartbeat_age_seconds=round(heartbeat_age, 1),
+        telemetry_freshness_status=freshness,
+        delayed_events_count=collector.delayed_events_count if collector else 0,
+        duplicate_events_count=collector.duplicate_events_count if collector else 0,
+        out_of_order_count=collector.out_of_order_count if collector else 0,
+        total_events_ingested=total_events,
+        sequence_number=latest_metric.sequence_number,
+        is_delayed=latest_metric.is_delayed,
+        is_out_of_order=latest_metric.is_out_of_order,
+    )
+
+
+# --------------------------------------------------
+# REQUIREMENT 2: ORGANISER STREAM STATUS
+# --------------------------------------------------
+
+@app.get("/api/v1/stream/status", response_model=StreamStatusOut)
+def get_stream_status(
+    identity=Depends(authenticate_agent),
+    db: Session = Depends(get_db),
+):
+    tenant_id = identity["tenant_id"]
+    record = db.scalar(
+        select(StreamConnectionRecord)
+        .where(StreamConnectionRecord.tenant_id == tenant_id)
+        .order_by(StreamConnectionRecord.updated_at.desc())
+        .limit(1)
+    )
+    now = datetime.now(timezone.utc)
+    if not record:
+        return StreamStatusOut(
+            stream_name="organiser-telemetry-stream",
+            endpoint_url="AWAITING_ORGANISER_CONFIG",
+            transport_protocol="HTTP_SSE",
+            status="DISCONNECTED",
+            last_event_id=None,
+            last_event_timestamp=None,
+            events_received_count=0,
+            duplicate_events_count=0,
+            delayed_events_count=0,
+            reconnect_attempts=0,
+            last_heartbeat=now.isoformat(),
+            error_message="Organiser telemetry stream details pending from event organizers.",
+        )
+    return StreamStatusOut(
+        stream_name=record.stream_name,
+        endpoint_url=record.endpoint_url,
+        transport_protocol=record.transport_protocol,
+        status=record.status,
+        last_event_id=record.last_event_id,
+        last_event_timestamp=record.last_event_timestamp.isoformat() if record.last_event_timestamp else None,
+        events_received_count=record.events_received_count,
+        duplicate_events_count=record.duplicate_events_count,
+        delayed_events_count=record.delayed_events_count,
+        reconnect_attempts=record.reconnect_attempts,
+        last_heartbeat=record.last_heartbeat.isoformat() if hasattr(record.last_heartbeat, "isoformat") else str(record.last_heartbeat),
+        error_message=record.error_message or "",
+    )
+
+
+@app.post("/api/v1/stream/status", response_model=StreamStatusOut)
+def update_stream_status(
+    status_in: StreamStatusOut,
+    identity=Depends(authenticate_agent),
+    db: Session = Depends(get_db),
+):
+    tenant_id = identity["tenant_id"]
+    now = datetime.now(timezone.utc)
+    record = db.scalar(
+        select(StreamConnectionRecord)
+        .where(StreamConnectionRecord.tenant_id == tenant_id, StreamConnectionRecord.stream_name == status_in.stream_name)
+        .limit(1)
+    )
+    if not record:
+        record = StreamConnectionRecord(
+            tenant_id=tenant_id,
+            stream_name=status_in.stream_name,
+            endpoint_url=status_in.endpoint_url,
+            transport_protocol=status_in.transport_protocol,
+            status=status_in.status,
+            last_event_id=status_in.last_event_id,
+            events_received_count=status_in.events_received_count,
+            duplicate_events_count=status_in.duplicate_events_count,
+            delayed_events_count=status_in.delayed_events_count,
+            reconnect_attempts=status_in.reconnect_attempts,
+            last_heartbeat=now,
+            error_message=status_in.error_message,
+            updated_at=now,
+        )
+        db.add(record)
+    else:
+        record.endpoint_url = status_in.endpoint_url
+        record.transport_protocol = status_in.transport_protocol
+        record.status = status_in.status
+        if status_in.last_event_id:
+            record.last_event_id = status_in.last_event_id
+        record.events_received_count = status_in.events_received_count
+        record.duplicate_events_count = status_in.duplicate_events_count
+        record.delayed_events_count = status_in.delayed_events_count
+        record.reconnect_attempts = status_in.reconnect_attempts
+        record.last_heartbeat = now
+        record.error_message = status_in.error_message
+        record.updated_at = now
+    db.commit()
+    return status_in
 
 
 @app.get("/api/v1/telemetry/latest")
