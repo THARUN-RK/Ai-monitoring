@@ -17,6 +17,7 @@ import {
   Sliders,
   ShieldAlert,
   HelpCircle,
+  HeartPulse,
 } from "lucide-react";
 
 const API = import.meta.env.VITE_API_URL ?? "https://ai-monitoring-5n2p.onrender.com";
@@ -97,16 +98,266 @@ type EgressAudit = {
   sanitized_sample: string;
 };
 
+// SRE Four-State Health Classification Engine Types
+type MetricHealthDetail = {
+  metric_name: string;
+  current_value: number;
+  unit: string;
+  state: "EXCELLENT" | "GOOD" | "FAIR" | "POOR";
+  threshold_applied: Record<string, number>;
+  reason: string;
+};
+
+type CollectorHealthDetail = {
+  collector_id: string;
+  status: string;
+  last_heartbeat: string | null;
+  freshness_seconds: number | null;
+  state: "EXCELLENT" | "GOOD" | "FAIR" | "POOR";
+  reason: string;
+};
+
+type FreshnessHealthDetail = {
+  last_telemetry_at: string | null;
+  age_seconds: number | null;
+  state: "EXCELLENT" | "GOOD" | "FAIR" | "POOR";
+  reason: string;
+};
+
+type AnomalyHealthDetail = {
+  active_count: number;
+  critical_count: number;
+  warning_count: number;
+  max_severity: string;
+  state: "EXCELLENT" | "GOOD" | "FAIR" | "POOR";
+  reason: string;
+};
+
+type HealthTransition = {
+  id: number;
+  tenant_id: string;
+  from_state: string;
+  to_state: string;
+  overall_health: string;
+  reason: string;
+  metrics_snapshot: string;
+  transitioned_at: string;
+};
+
+type SystemHealth = {
+  tenant_id: string;
+  overall_health: "EXCELLENT" | "GOOD" | "FAIR" | "POOR";
+  evaluated_at: string;
+  summary_reason: string;
+  reasons: string[];
+  metrics: MetricHealthDetail[];
+  collector: CollectorHealthDetail;
+  freshness: FreshnessHealthDetail;
+  anomalies: AnomalyHealthDetail;
+  latest_transition?: HealthTransition | null;
+  transitions_count: number;
+};
+
+function computeClientHealth(
+  metrics: Record<string, number>,
+  collectors: Collector[],
+  records: Array<{ observed_at: string; metric_name: string; metric_value: number; unit: string }>,
+  anomalies: AnomalyDetail[],
+  simMode: string | null,
+  transitionsHistory: HealthTransition[]
+): SystemHealth {
+  let cpu = metrics.cpu_utilization ?? 0.45;
+  let mem = metrics.memory_utilization ?? 0.55;
+  let disk = metrics.disk_utilization ?? 0.42;
+  let lat = metrics.http_latency_p95_ms ?? 180;
+  let err = metrics.http_error_rate ?? 0.01;
+  let colStatus = collectors.length > 0 ? collectors[0].status : "online";
+  let colId = collectors.length > 0 ? collectors[0].collector_id : "collector-tier1-demo";
+  let freshnessAge = 8.0;
+
+  // Apply simulated test conditions
+  if (simMode === "normal") {
+    cpu = 0.42; mem = 0.52; disk = 0.42; lat = 160; err = 0.005; colStatus = "online"; freshnessAge = 5.0;
+  } else if (simMode === "minor") {
+    cpu = 0.68; mem = 0.72; disk = 0.50; lat = 320; err = 0.02; colStatus = "online"; freshnessAge = 12.0;
+  } else if (simMode === "elevated") {
+    cpu = 0.82; mem = 0.84; disk = 0.75; lat = 550; err = 0.05; colStatus = "online"; freshnessAge = 22.0;
+  } else if (simMode === "severe") {
+    cpu = 0.94; mem = 0.95; disk = 0.92; lat = 890; err = 0.15; colStatus = "online"; freshnessAge = 6.0;
+  } else if (simMode === "offline") {
+    colStatus = "offline";
+  } else if (simMode === "stale") {
+    freshnessAge = 42.0;
+  } else if (simMode === "expired") {
+    freshnessAge = 95.0;
+  } else {
+    if (records.length > 0) {
+      try {
+        const lastDt = new Date(records[0].observed_at);
+        freshnessAge = Math.max(0, Math.floor((Date.now() - lastDt.getTime()) / 1000));
+      } catch {
+        freshnessAge = 8.0;
+      }
+    }
+  }
+
+  // 1. Metric evaluations
+  const metricEvals: MetricHealthDetail[] = [
+    {
+      metric_name: "cpu_utilization",
+      current_value: cpu,
+      unit: "ratio",
+      state: cpu < 0.60 ? "EXCELLENT" : cpu < 0.75 ? "GOOD" : cpu < 0.88 ? "FAIR" : "POOR",
+      threshold_applied: { excellent_max: 0.60, good_max: 0.75, fair_max: 0.88 },
+      reason: cpu < 0.60 ? `CPU Utilization (${(cpu * 100).toFixed(1)}%) is optimal (< 60.0%).`
+        : cpu < 0.75 ? `CPU Utilization (${(cpu * 100).toFixed(1)}%) is within nominal operating range (< 75.0%).`
+        : cpu < 0.88 ? `CPU Utilization (${(cpu * 100).toFixed(1)}%) is elevated above normal threshold; requires attention.`
+        : `CPU Utilization (${(cpu * 100).toFixed(1)}%) reached critical degradation (>= 88.0%); immediate intervention required.`,
+    },
+    {
+      metric_name: "memory_utilization",
+      current_value: mem,
+      unit: "ratio",
+      state: mem < 0.65 ? "EXCELLENT" : mem < 0.80 ? "GOOD" : mem < 0.90 ? "FAIR" : "POOR",
+      threshold_applied: { excellent_max: 0.65, good_max: 0.80, fair_max: 0.90 },
+      reason: mem < 0.65 ? `Memory (RAM) (${(mem * 100).toFixed(1)}%) is optimal (< 65.0%).`
+        : mem < 0.80 ? `Memory (RAM) (${(mem * 100).toFixed(1)}%) is within nominal operating range (< 80.0%).`
+        : mem < 0.90 ? `Memory (RAM) (${(mem * 100).toFixed(1)}%) elevated above warning threshold.`
+        : `Memory (RAM) (${(mem * 100).toFixed(1)}%) reached critical capacity (>= 90.0%).`,
+    },
+    {
+      metric_name: "disk_utilization",
+      current_value: disk,
+      unit: "ratio",
+      state: disk < 0.70 ? "EXCELLENT" : disk < 0.80 ? "GOOD" : disk < 0.90 ? "FAIR" : "POOR",
+      threshold_applied: { excellent_max: 0.70, good_max: 0.80, fair_max: 0.90 },
+      reason: disk < 0.70 ? `Disk Storage (${(disk * 100).toFixed(1)}%) is optimal (< 70.0%).`
+        : disk < 0.80 ? `Disk Storage (${(disk * 100).toFixed(1)}%) is normal.`
+        : disk < 0.90 ? `Disk Storage (${(disk * 100).toFixed(1)}%) is elevated.`
+        : `Disk Storage (${(disk * 100).toFixed(1)}%) critical capacity exhaustion.`,
+    },
+    {
+      metric_name: "http_latency_p95_ms",
+      current_value: lat,
+      unit: "ms",
+      state: lat < 250 ? "EXCELLENT" : lat < 450 ? "GOOD" : lat < 750 ? "FAIR" : "POOR",
+      threshold_applied: { excellent_max: 250, good_max: 450, fair_max: 750 },
+      reason: lat < 250 ? `p95 Latency (${Math.round(lat)} ms) meets optimal SLA (< 250 ms).`
+        : lat < 450 ? `p95 Latency (${Math.round(lat)} ms) is within acceptable range (< 450 ms).`
+        : lat < 750 ? `p95 Latency (${Math.round(lat)} ms) is elevated (> 450 ms).`
+        : `p95 Latency (${Math.round(lat)} ms) violates critical response SLA (>= 750 ms).`,
+    },
+    {
+      metric_name: "http_error_rate",
+      current_value: err,
+      unit: "ratio",
+      state: err < 0.01 ? "EXCELLENT" : err < 0.03 ? "GOOD" : err < 0.08 ? "FAIR" : "POOR",
+      threshold_applied: { excellent_max: 0.01, good_max: 0.03, fair_max: 0.08 },
+      reason: err < 0.01 ? `Error Rate (${(err * 100).toFixed(2)}%) is optimal (< 1.0%).`
+        : err < 0.03 ? `Error Rate (${(err * 100).toFixed(2)}%) within standard tolerance (< 3.0%).`
+        : err < 0.08 ? `Error Rate (${(err * 100).toFixed(2)}%) elevated above warning threshold.`
+        : `Error Rate (${(err * 100).toFixed(2)}%) critical service failure rate (>= 8.0%).`,
+    },
+  ];
+
+  // 2. Collector evaluation
+  let colState: "EXCELLENT" | "GOOD" | "FAIR" | "POOR" = "EXCELLENT";
+  let colReason = `Collector '${colId}' online and reporting healthy heartbeats.`;
+  if (colStatus === "offline") {
+    colState = "POOR";
+    colReason = `Collector '${colId}' is offline. Local telemetry collection halted.`;
+  }
+
+  // 3. Telemetry Freshness evaluation (Downgrade health when telemetry becomes stale)
+  let freshState: "EXCELLENT" | "GOOD" | "FAIR" | "POOR" = "EXCELLENT";
+  let freshReason = `Telemetry stream fresh (${freshnessAge.toFixed(1)}s ago < 15.0s).`;
+  if (freshnessAge >= 60.0) {
+    freshState = "POOR";
+    freshReason = `Telemetry stream expired or missing (${freshnessAge.toFixed(1)}s ago >= 60.0s). Critical observability loss.`;
+  } else if (freshnessAge >= 30.0) {
+    freshState = "FAIR";
+    freshReason = `Telemetry stream is stale (${freshnessAge.toFixed(1)}s ago >= 30.0s). Health downgraded due to delayed reporting.`;
+  } else if (freshnessAge >= 15.0) {
+    freshState = "GOOD";
+    freshReason = `Telemetry stream active (${freshnessAge.toFixed(1)}s ago < 30.0s).`;
+  }
+
+  // 4. AIOps Anomaly evaluation
+  const critAnoms = anomalies.filter(a => a.severity === "critical");
+  const warnAnoms = anomalies.filter(a => a.severity === "warning");
+  let anomState: "EXCELLENT" | "GOOD" | "FAIR" | "POOR" = "EXCELLENT";
+  let anomReason = "AIOps model reports nominal baselines without anomalies.";
+  if (critAnoms.length > 0) {
+    anomState = "POOR";
+    anomReason = `AIOps engine detected ${critAnoms.length} critical operational anomalies (${critAnoms.map(a => a.metric_name).join(", ")}).`;
+  } else if (warnAnoms.length > 0) {
+    anomState = "FAIR";
+    anomReason = `AIOps engine detected ${warnAnoms.length} warning anomalies (${warnAnoms.map(a => a.metric_name).join(", ")}).`;
+  }
+
+  // Worst-state ranking
+  const rank: Record<string, number> = { EXCELLENT: 1, GOOD: 2, FAIR: 3, POOR: 4 };
+  const allStates = [...metricEvals.map(m => m.state), colState, freshState, anomState];
+  const maxRank = Math.max(...allStates.map(s => rank[s]));
+  const overall = (Object.keys(rank) as Array<"EXCELLENT" | "GOOD" | "FAIR" | "POOR">).find(k => rank[k] === maxRank) || "POOR";
+
+  const contributingReasons: string[] = [];
+  metricEvals.forEach(m => { if (m.state !== "EXCELLENT") contributingReasons.push(m.reason); });
+  if (colState !== "EXCELLENT") contributingReasons.push(colReason);
+  if (freshState !== "EXCELLENT") contributingReasons.push(freshReason);
+  if (anomState !== "EXCELLENT") contributingReasons.push(anomReason);
+
+  const summaryReason = contributingReasons.length === 0
+    ? "All infrastructure telemetry, collector heartbeats, and AIOps baselines are operating in EXCELLENT status."
+    : `System health is ${overall}: ` + contributingReasons.join("; ");
+
+  return {
+    tenant_id: "demo-tenant",
+    overall_health: overall,
+    evaluated_at: new Date().toISOString(),
+    summary_reason: summaryReason,
+    reasons: contributingReasons.length > 0 ? contributingReasons : [summaryReason],
+    metrics: metricEvals,
+    collector: {
+      collector_id: colId,
+      status: colStatus,
+      last_heartbeat: new Date(Date.now() - freshnessAge * 1000).toISOString(),
+      freshness_seconds: freshnessAge,
+      state: colState,
+      reason: colReason,
+    },
+    freshness: {
+      last_telemetry_at: new Date(Date.now() - freshnessAge * 1000).toISOString(),
+      age_seconds: freshnessAge,
+      state: freshState,
+      reason: freshReason,
+    },
+    anomalies: {
+      active_count: anomalies.length,
+      critical_count: critAnoms.length,
+      warning_count: warnAnoms.length,
+      max_severity: critAnoms.length > 0 ? "critical" : warnAnoms.length > 0 ? "warning" : "none",
+      state: anomState,
+      reason: anomReason,
+    },
+    latest_transition: transitionsHistory.length > 0 ? transitionsHistory[0] : null,
+    transitions_count: transitionsHistory.length,
+  };
+}
+
 export default function App() {
   const [summary, setSummary] = useState<Summary | null>(null);
   const [anomaly, setAnomaly] = useState<Anomaly | null>(null);
   const [collectors, setCollectors] = useState<Collector[]>([]);
   const [egressAudits, setEgressAudits] = useState<EgressAudit[]>([]);
   const [selectedAudit, setSelectedAudit] = useState<EgressAudit | null>(null);
+  const [systemHealth, setSystemHealth] = useState<SystemHealth | null>(null);
+  const [healthHistory, setHealthHistory] = useState<HealthTransition[]>([]);
+  const [healthSimMode, setHealthSimMode] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [lastUpdated, setLastUpdated] = useState("");
-  const [activeTab, setActiveTab] = useState<"overview" | "aiops" | "egress" | "collectors">("overview");
+  const [activeTab, setActiveTab] = useState<"overview" | "health" | "aiops" | "egress" | "collectors">("overview");
 
   // Controlled test mode state: allows testing dynamic anomaly detections without host disruption
   const [simulatedMetric, setSimulatedMetric] = useState<{ metric: string; value: number } | null>(null);
@@ -154,11 +405,13 @@ export default function App() {
         anomalyUrl += `?${qs}`;
       }
 
-      const [summaryRes, anomalyRes, collectorsRes, egressRes] = await Promise.allSettled([
+      const [summaryRes, anomalyRes, collectorsRes, egressRes, healthRes, historyRes] = await Promise.allSettled([
         safeFetch("/api/v1/dashboard/summary", headers),
         safeFetch(anomalyUrl, headers),
         safeFetch("/api/v1/collector/health", headers),
         safeFetch("/api/v1/telemetry/egress", headers),
+        safeFetch("/api/v1/health/system", headers),
+        safeFetch("/api/v1/health/history", headers),
       ]);
 
       let currentSummary: Summary | null = null;
@@ -405,6 +658,36 @@ export default function App() {
         setSelectedAudit((prev) => prev ?? resolvedAudits[0]);
       }
 
+      // SRE Four-State Health Classification Engine Resolution
+      let resolvedHistory: HealthTransition[] = [];
+      if (historyRes.status === "fulfilled" && historyRes.value?.ok) {
+        try {
+          resolvedHistory = await historyRes.value.json();
+          setHealthHistory(resolvedHistory);
+        } catch {
+          // ignore
+        }
+      }
+
+      if (!healthSimMode && healthRes.status === "fulfilled" && healthRes.value?.ok) {
+        try {
+          const hData: SystemHealth = await healthRes.value.json();
+          setSystemHealth(hData);
+        } catch {
+          // fallback
+        }
+      } else {
+        const clientHealth = computeClientHealth(
+          currentSummary?.latest_metrics || {},
+          resolvedCols,
+          currentSummary?.records || [],
+          anomaly?.anomalies || [],
+          healthSimMode,
+          resolvedHistory
+        );
+        setSystemHealth(clientHealth);
+      }
+
       setLastUpdated(new Date().toLocaleTimeString());
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to connect to API");
@@ -420,7 +703,7 @@ export default function App() {
       void load();
     }, REFRESH_INTERVAL);
     return () => clearInterval(timer);
-  }, [simulatedMetric, simulatedAuthCount]);
+  }, [simulatedMetric, simulatedAuthCount, healthSimMode]);
 
   return (
     <main className="shell">
@@ -436,6 +719,43 @@ export default function App() {
         </div>
 
         <div style={{ display: "flex", gap: "12px", alignItems: "center" }}>
+          {systemHealth && (
+            <span
+              onClick={() => setActiveTab("health")}
+              title="Click to view SRE System Health, Metrics & Transition History"
+              style={{
+                cursor: "pointer",
+                padding: "5px 12px",
+                borderRadius: "6px",
+                fontSize: "11px",
+                fontWeight: "700",
+                letterSpacing: "1px",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "6px",
+                background:
+                  systemHealth.overall_health === "EXCELLENT" ? "rgba(6, 78, 59, 0.6)" :
+                  systemHealth.overall_health === "GOOD" ? "rgba(12, 74, 110, 0.6)" :
+                  systemHealth.overall_health === "FAIR" ? "rgba(120, 53, 15, 0.6)" :
+                  "rgba(136, 19, 55, 0.6)",
+                borderColor:
+                  systemHealth.overall_health === "EXCELLENT" ? "#10b981" :
+                  systemHealth.overall_health === "GOOD" ? "#0284c7" :
+                  systemHealth.overall_health === "FAIR" ? "#d97706" :
+                  "#e11d48",
+                color:
+                  systemHealth.overall_health === "EXCELLENT" ? "#34d399" :
+                  systemHealth.overall_health === "GOOD" ? "#38bdf8" :
+                  systemHealth.overall_health === "FAIR" ? "#fbbf24" :
+                  "#f43f5e",
+                borderWidth: "1px",
+                borderStyle: "solid",
+              }}
+            >
+              <HeartPulse size={13} />
+              HEALTH: {systemHealth.overall_health}
+            </span>
+          )}
           <span className="live">
             <Radio size={12} style={{ display: "inline", verticalAlign: "middle", marginRight: "4px" }} />
             {collectors.some(c => c.status === "online") ? "TIER 1 COLLECTOR CONNECTED" : "● DEMO ENVIRONMENT"}
@@ -452,7 +772,7 @@ export default function App() {
             <em>Privacy by architecture.</em>
           </h1>
           <p className="muted">
-            Two-Tier Telemetry Pipeline · Client-Side Redaction · Egress Proof Panel · Explainable AIOps
+            Two-Tier Telemetry Pipeline · Client-Side Redaction · Egress Proof Panel · Explainable AIOps · SRE Health Engine
           </p>
         </div>
 
@@ -474,6 +794,18 @@ export default function App() {
           }}
         >
           <Activity size={14} /> Fleet Overview
+        </button>
+
+        <button
+          onClick={() => setActiveTab("health")}
+          style={{
+            background: activeTab === "health" ? "#286e60" : "transparent",
+            borderColor: activeTab === "health" ? "#62d8b6" : "#223044",
+            color: activeTab === "health" ? "#fff" : "#8ea3b8",
+            padding: "8px 16px",
+          }}
+        >
+          <HeartPulse size={14} /> SRE System Health ({systemHealth?.overall_health ?? "HEALTH"})
         </button>
 
         <button
@@ -518,6 +850,95 @@ export default function App() {
       {/* TAB 1: FLEET OVERVIEW */}
       {activeTab === "overview" && (
         <>
+          {/* SRE SYSTEM HEALTH HIGHLIGHT BANNER */}
+          {systemHealth && (
+            <div
+              style={{
+                marginBottom: "1.25rem",
+                padding: "16px",
+                borderRadius: "12px",
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                background:
+                  systemHealth.overall_health === "EXCELLENT" ? "linear-gradient(135deg, rgba(6,78,59,0.45), rgba(6,78,59,0.15))" :
+                  systemHealth.overall_health === "GOOD" ? "linear-gradient(135deg, rgba(12,74,110,0.45), rgba(12,74,110,0.15))" :
+                  systemHealth.overall_health === "FAIR" ? "linear-gradient(135deg, rgba(120,53,15,0.45), rgba(120,53,15,0.15))" :
+                  "linear-gradient(135deg, rgba(136,19,55,0.45), rgba(136,19,55,0.15))",
+                border: `1px solid ${
+                  systemHealth.overall_health === "EXCELLENT" ? "#10b981" :
+                  systemHealth.overall_health === "GOOD" ? "#0284c7" :
+                  systemHealth.overall_health === "FAIR" ? "#d97706" :
+                  "#e11d48"
+                }`,
+              }}
+            >
+              <div style={{ display: "flex", gap: "12px", alignItems: "center" }}>
+                <HeartPulse
+                  size={26}
+                  color={
+                    systemHealth.overall_health === "EXCELLENT" ? "#34d399" :
+                    systemHealth.overall_health === "GOOD" ? "#38bdf8" :
+                    systemHealth.overall_health === "FAIR" ? "#fbbf24" :
+                    "#f43f5e"
+                  }
+                />
+                <div>
+                  <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" }}>
+                    <span style={{ fontSize: "11px", letterSpacing: "1px", color: "#94a3b8", fontWeight: 700 }}>
+                      SRE SYSTEM HEALTH:
+                    </span>
+                    <span
+                      style={{
+                        padding: "2px 8px",
+                        borderRadius: "4px",
+                        fontSize: "12px",
+                        fontWeight: 800,
+                        letterSpacing: "1px",
+                        background:
+                          systemHealth.overall_health === "EXCELLENT" ? "#064e3b" :
+                          systemHealth.overall_health === "GOOD" ? "#0c4a6e" :
+                          systemHealth.overall_health === "FAIR" ? "#78350f" :
+                          "#881337",
+                        color:
+                          systemHealth.overall_health === "EXCELLENT" ? "#34d399" :
+                          systemHealth.overall_health === "GOOD" ? "#38bdf8" :
+                          systemHealth.overall_health === "FAIR" ? "#fbbf24" :
+                          "#f43f5e",
+                      }}
+                    >
+                      {systemHealth.overall_health}
+                    </span>
+                    <span style={{ fontSize: "11px", color: "#64748b" }}>
+                      · Telemetry age: {systemHealth.freshness.age_seconds !== null ? `${systemHealth.freshness.age_seconds.toFixed(1)}s` : "—"}
+                    </span>
+                    {systemHealth.freshness.state === "FAIR" && (
+                      <span style={{ fontSize: "10px", color: "#fbbf24", background: "rgba(120,53,15,0.4)", padding: "1px 6px", borderRadius: "4px" }}>
+                        STALE TELEMETRY WARNING
+                      </span>
+                    )}
+                  </div>
+                  <p style={{ margin: "4px 0 0", fontSize: "12px", color: "#cbd5e1" }}>
+                    {systemHealth.summary_reason}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setActiveTab("health")}
+                style={{
+                  background: "#1e293b",
+                  borderColor: "#475569",
+                  color: "#cbd5e1",
+                  fontSize: "11px",
+                  padding: "7px 14px",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                Inspect SRE Health & History &rarr;
+              </button>
+            </div>
+          )}
+
           {/* ANOMALY QUICK ALERT BANNER */}
           {anomaly?.anomaly && (
             <div className="error" style={{ marginBottom: "1.25rem", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -624,6 +1045,409 @@ export default function App() {
                     <tr>
                       <td colSpan={4} className="empty">
                         No metadata received. Start the customer agent to begin real-time streaming.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        </>
+      )}
+
+      {/* TAB 2: SRE SYSTEM HEALTH & FOUR-STATE CLASSIFICATION */}
+      {activeTab === "health" && (
+        <>
+          {/* OVERALL HEALTH FOUR-STATE CARD */}
+          <section className="panel" style={{ marginTop: 0, padding: "24px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "16px" }}>
+              <div>
+                <p className="eyebrow">SITE RELIABILITY ENGINEERING (SRE)</p>
+                <h2 style={{ margin: "6px 0 10px", display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
+                  Four-State System Health Engine
+                  <span
+                    style={{
+                      padding: "4px 16px",
+                      borderRadius: "8px",
+                      fontSize: "14px",
+                      fontWeight: 800,
+                      letterSpacing: "1.5px",
+                      background:
+                        systemHealth?.overall_health === "EXCELLENT" ? "rgba(6, 78, 59, 0.7)" :
+                        systemHealth?.overall_health === "GOOD" ? "rgba(12, 74, 110, 0.7)" :
+                        systemHealth?.overall_health === "FAIR" ? "rgba(120, 53, 15, 0.7)" :
+                        "rgba(136, 19, 55, 0.7)",
+                      borderColor:
+                        systemHealth?.overall_health === "EXCELLENT" ? "#10b981" :
+                        systemHealth?.overall_health === "GOOD" ? "#0284c7" :
+                        systemHealth?.overall_health === "FAIR" ? "#d97706" :
+                        "#e11d48",
+                      color:
+                        systemHealth?.overall_health === "EXCELLENT" ? "#34d399" :
+                        systemHealth?.overall_health === "GOOD" ? "#38bdf8" :
+                        systemHealth?.overall_health === "FAIR" ? "#fbbf24" :
+                        "#f43f5e",
+                      borderWidth: "1px",
+                      borderStyle: "solid",
+                    }}
+                  >
+                    STATUS: {systemHealth?.overall_health ?? "UNKNOWN"}
+                  </span>
+                </h2>
+                <p style={{ margin: 0, color: "#94a3b8", fontSize: "13px", maxWidth: "780px", lineHeight: "1.6" }}>
+                  {systemHealth?.summary_reason ?? "Evaluating health from active telemetry and collector heartbeats..."}
+                </p>
+              </div>
+
+              <div style={{ textAlign: "right", background: "#0b1320", padding: "12px 16px", borderRadius: "8px", border: "1px solid #1e293b" }}>
+                <span style={{ fontSize: "10px", color: "#64748b", textTransform: "uppercase", letterSpacing: "1px", display: "block" }}>
+                  Telemetry Freshness
+                </span>
+                <strong style={{
+                  fontSize: "18px",
+                  display: "block",
+                  color:
+                    (systemHealth?.freshness.age_seconds ?? 0) < 15 ? "#34d399" :
+                    (systemHealth?.freshness.age_seconds ?? 0) < 30 ? "#38bdf8" :
+                    (systemHealth?.freshness.age_seconds ?? 0) < 60 ? "#fbbf24" :
+                    "#f43f5e",
+                }}>
+                  {systemHealth?.freshness.age_seconds !== null && systemHealth?.freshness.age_seconds !== undefined ? `${systemHealth.freshness.age_seconds.toFixed(1)}s ago` : "No Stream"}
+                </strong>
+                <small style={{ color: "#94a3b8", fontSize: "10px" }}>
+                  {(systemHealth?.freshness.age_seconds ?? 0) < 15 ? "● Fresh (<15s)" :
+                   (systemHealth?.freshness.age_seconds ?? 0) < 30 ? "● Active (<30s)" :
+                   (systemHealth?.freshness.age_seconds ?? 0) < 60 ? "▲ Stale (Downgraded)" :
+                   "✕ Expired / Critical"}
+                </small>
+              </div>
+            </div>
+
+            {/* STALENESS SRE SLA POLICY CALLOUT */}
+            <div style={{ marginTop: "18px", padding: "12px 16px", borderRadius: "8px", background: "rgba(15, 23, 42, 0.7)", border: "1px solid #1e293b", fontSize: "12px", color: "#94a3b8", display: "flex", gap: "10px", alignItems: "center" }}>
+              <ShieldCheck size={16} color="#62d8b6" style={{ flexShrink: 0 }} />
+              <div>
+                <b style={{ color: "#e2e8f0" }}>SRE Staleness & Four-State Policy:</b> Telemetry is evaluated dynamically against configurable thresholds.
+                Whenever telemetry age exceeds <b>30 seconds</b>, health is automatically downgraded to <b>FAIR</b>. If age exceeds <b>60 seconds</b> or collector goes offline, health is downgraded to <b>POOR</b>.
+              </div>
+            </div>
+          </section>
+
+          {/* SRE INTERACTIVE SCENARIO SIMULATOR */}
+          <section className="panel" style={{ marginTop: "1.25rem", padding: "18px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px", flexWrap: "wrap", gap: "10px" }}>
+              <div>
+                <b style={{ fontSize: "13px", letterSpacing: "1px", color: "#62d8b6", display: "flex", alignItems: "center", gap: "6px" }}>
+                  <Sliders size={14} /> SRE HEALTH EVALUATION SIMULATOR &amp; TEST CASES
+                </b>
+                <small style={{ color: "#64748b", display: "block", marginTop: "2px" }}>
+                  Inject test conditions to verify the 4-state engine without modifying customer host infrastructure.
+                </small>
+              </div>
+              {healthSimMode && (
+                <button
+                  onClick={() => setHealthSimMode(null)}
+                  style={{ background: "#334155", borderColor: "#64748b", color: "#f8fafc", fontSize: "11px", padding: "5px 12px" }}
+                >
+                  Reset Live Telemetry
+                </button>
+              )}
+            </div>
+
+            <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+              <button
+                onClick={() => setHealthSimMode("normal")}
+                style={{
+                  background: healthSimMode === "normal" ? "#064e3b" : "#0f172a",
+                  borderColor: healthSimMode === "normal" ? "#10b981" : "#334155",
+                  color: healthSimMode === "normal" ? "#34d399" : "#cbd5e1",
+                  fontSize: "11px",
+                  padding: "6px 12px",
+                }}
+              >
+                1. Normal CPU &amp; RAM &rarr; EXCELLENT
+              </button>
+
+              <button
+                onClick={() => setHealthSimMode("minor")}
+                style={{
+                  background: healthSimMode === "minor" ? "#0c4a6e" : "#0f172a",
+                  borderColor: healthSimMode === "minor" ? "#0284c7" : "#334155",
+                  color: healthSimMode === "minor" ? "#38bdf8" : "#cbd5e1",
+                  fontSize: "11px",
+                  padding: "6px 12px",
+                }}
+              >
+                2. Minor Deviation &rarr; GOOD
+              </button>
+
+              <button
+                onClick={() => setHealthSimMode("elevated")}
+                style={{
+                  background: healthSimMode === "elevated" ? "#78350f" : "#0f172a",
+                  borderColor: healthSimMode === "elevated" ? "#d97706" : "#334155",
+                  color: healthSimMode === "elevated" ? "#fbbf24" : "#cbd5e1",
+                  fontSize: "11px",
+                  padding: "6px 12px",
+                }}
+              >
+                3. Elevated Resource Usage &rarr; FAIR
+              </button>
+
+              <button
+                onClick={() => setHealthSimMode("severe")}
+                style={{
+                  background: healthSimMode === "severe" ? "#881337" : "#0f172a",
+                  borderColor: healthSimMode === "severe" ? "#e11d48" : "#334155",
+                  color: healthSimMode === "severe" ? "#f43f5e" : "#cbd5e1",
+                  fontSize: "11px",
+                  padding: "6px 12px",
+                }}
+              >
+                4. Severe Degradation &rarr; POOR
+              </button>
+
+              <button
+                onClick={() => setHealthSimMode("offline")}
+                style={{
+                  background: healthSimMode === "offline" ? "#881337" : "#0f172a",
+                  borderColor: healthSimMode === "offline" ? "#e11d48" : "#334155",
+                  color: healthSimMode === "offline" ? "#f43f5e" : "#cbd5e1",
+                  fontSize: "11px",
+                  padding: "6px 12px",
+                }}
+              >
+                5. Collector Offline &rarr; POOR
+              </button>
+
+              <button
+                onClick={() => setHealthSimMode("stale")}
+                style={{
+                  background: healthSimMode === "stale" ? "#78350f" : "#0f172a",
+                  borderColor: healthSimMode === "stale" ? "#d97706" : "#334155",
+                  color: healthSimMode === "stale" ? "#fbbf24" : "#cbd5e1",
+                  fontSize: "11px",
+                  padding: "6px 12px",
+                }}
+              >
+                6. Stale Telemetry (&gt;30s) &rarr; FAIR
+              </button>
+
+              <button
+                onClick={() => setHealthSimMode("expired")}
+                style={{
+                  background: healthSimMode === "expired" ? "#881337" : "#0f172a",
+                  borderColor: healthSimMode === "expired" ? "#e11d48" : "#334155",
+                  color: healthSimMode === "expired" ? "#f43f5e" : "#cbd5e1",
+                  fontSize: "11px",
+                  padding: "6px 12px",
+                }}
+              >
+                7. Missing Telemetry (&gt;60s) &rarr; POOR
+              </button>
+            </div>
+          </section>
+
+          {/* INDIVIDUAL METRIC HEALTH CARDS */}
+          <section style={{ marginTop: "1.25rem" }}>
+            <h3 style={{ fontSize: "14px", letterSpacing: "1px", color: "#8ea3b8", marginBottom: "12px" }}>
+              INDIVIDUAL METRIC &amp; COMPONENT HEALTH CLASSIFICATION
+            </h3>
+            <div className="grid" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))" }}>
+              {systemHealth?.metrics.map((m) => {
+                const badge =
+                  m.state === "EXCELLENT" ? { bg: "rgba(6,78,59,0.5)", border: "#10b981", color: "#34d399" } :
+                  m.state === "GOOD" ? { bg: "rgba(12,74,110,0.5)", border: "#0284c7", color: "#38bdf8" } :
+                  m.state === "FAIR" ? { bg: "rgba(120,53,15,0.5)", border: "#d97706", color: "#fbbf24" } :
+                  { bg: "rgba(136,19,55,0.5)", border: "#e11d48", color: "#f43f5e" };
+
+                const formattedVal = m.unit === "ratio" ? `${(m.current_value * 100).toFixed(1)}%` : `${Math.round(m.current_value)} ${m.unit}`;
+
+                return (
+                  <article key={m.metric_name} style={{ display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
+                    <div>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                        <label style={{ margin: 0, textTransform: "uppercase" }}>{m.metric_name.replace(/_/g, " ")}</label>
+                        <span
+                          style={{
+                            padding: "2px 8px",
+                            borderRadius: "4px",
+                            fontSize: "10px",
+                            fontWeight: 700,
+                            background: badge.bg,
+                            borderColor: badge.border,
+                            color: badge.color,
+                            borderWidth: "1px",
+                            borderStyle: "solid",
+                          }}
+                        >
+                          {m.state}
+                        </span>
+                      </div>
+                      <strong style={{ fontSize: "22px", margin: "12px 0 6px" }}>{formattedVal}</strong>
+                      <p style={{ margin: "0 0 10px", fontSize: "11px", color: "#94a3b8", lineHeight: "1.4" }}>
+                        {m.reason}
+                      </p>
+                    </div>
+                    <div style={{ fontSize: "10px", color: "#64748b", borderTop: "1px solid #1e293b", paddingTop: "8px" }}>
+                      Thresholds: &lt;{(m.threshold_applied.excellent_max * (m.unit === "ratio" ? 100 : 1)).toFixed(0)} Exc · &lt;{(m.threshold_applied.good_max * (m.unit === "ratio" ? 100 : 1)).toFixed(0)} Good · &lt;{(m.threshold_applied.fair_max * (m.unit === "ratio" ? 100 : 1)).toFixed(0)} Fair
+                    </div>
+                  </article>
+                );
+              })}
+
+              {/* Collector Component Card */}
+              <article style={{ display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
+                <div>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <label style={{ margin: 0 }}>COLLECTOR AVAILABILITY</label>
+                    <span
+                      style={{
+                        padding: "2px 8px",
+                        borderRadius: "4px",
+                        fontSize: "10px",
+                        fontWeight: 700,
+                        background: systemHealth?.collector.state === "EXCELLENT" ? "rgba(6,78,59,0.5)" : systemHealth?.collector.state === "FAIR" ? "rgba(120,53,15,0.5)" : "rgba(136,19,55,0.5)",
+                        borderColor: systemHealth?.collector.state === "EXCELLENT" ? "#10b981" : systemHealth?.collector.state === "FAIR" ? "#d97706" : "#e11d48",
+                        color: systemHealth?.collector.state === "EXCELLENT" ? "#34d399" : systemHealth?.collector.state === "FAIR" ? "#fbbf24" : "#f43f5e",
+                        borderWidth: "1px",
+                        borderStyle: "solid",
+                      }}
+                    >
+                      {systemHealth?.collector.state ?? "UNKNOWN"}
+                    </span>
+                  </div>
+                  <strong style={{ fontSize: "20px", margin: "12px 0 6px", textTransform: "capitalize" }}>
+                    {systemHealth?.collector.status ?? "offline"}
+                  </strong>
+                  <p style={{ margin: "0 0 10px", fontSize: "11px", color: "#94a3b8", lineHeight: "1.4" }}>
+                    {systemHealth?.collector.reason ?? "Collector status evaluation"}
+                  </p>
+                </div>
+                <div style={{ fontSize: "10px", color: "#64748b", borderTop: "1px solid #1e293b", paddingTop: "8px" }}>
+                  ID: {systemHealth?.collector.collector_id}
+                </div>
+              </article>
+
+              {/* AIOps Anomaly State Card */}
+              <article style={{ display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
+                <div>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <label style={{ margin: 0 }}>AIOPS ANOMALY ENGINE</label>
+                    <span
+                      style={{
+                        padding: "2px 8px",
+                        borderRadius: "4px",
+                        fontSize: "10px",
+                        fontWeight: 700,
+                        background: systemHealth?.anomalies.state === "EXCELLENT" ? "rgba(6,78,59,0.5)" : systemHealth?.anomalies.state === "FAIR" ? "rgba(120,53,15,0.5)" : "rgba(136,19,55,0.5)",
+                        borderColor: systemHealth?.anomalies.state === "EXCELLENT" ? "#10b981" : systemHealth?.anomalies.state === "FAIR" ? "#d97706" : "#e11d48",
+                        color: systemHealth?.anomalies.state === "EXCELLENT" ? "#34d399" : systemHealth?.anomalies.state === "FAIR" ? "#fbbf24" : "#f43f5e",
+                        borderWidth: "1px",
+                        borderStyle: "solid",
+                      }}
+                    >
+                      {systemHealth?.anomalies.state ?? "EXCELLENT"}
+                    </span>
+                  </div>
+                  <strong style={{ fontSize: "20px", margin: "12px 0 6px" }}>
+                    {systemHealth?.anomalies.active_count ?? 0} Active
+                  </strong>
+                  <p style={{ margin: "0 0 10px", fontSize: "11px", color: "#94a3b8", lineHeight: "1.4" }}>
+                    {systemHealth?.anomalies.reason ?? "AIOps statistical baseline evaluation"}
+                  </p>
+                </div>
+                <div style={{ fontSize: "10px", color: "#64748b", borderTop: "1px solid #1e293b", paddingTop: "8px" }}>
+                  Critical: {systemHealth?.anomalies.critical_count ?? 0} · Warning: {systemHealth?.anomalies.warning_count ?? 0}
+                </div>
+              </article>
+            </div>
+          </section>
+
+          {/* HEALTH-STATE TRANSITION HISTORY LEDGER */}
+          <section className="panel" style={{ marginTop: "1.25rem" }}>
+            <div className="panel-title">
+              <div>
+                <p className="eyebrow">AUDIT &amp; RELIABILITY LEDGER</p>
+                <h2>Health-State Transition History ({healthHistory.length} Recorded Transitions)</h2>
+              </div>
+              <span style={{ fontSize: "11px", color: "#64748b" }}>
+                Every health change persisted in SQLite with UTC timestamps &amp; explanation reasons
+              </span>
+            </div>
+
+            <div style={{ overflowX: "auto" }}>
+              <table>
+                <thead>
+                  <tr>
+                    <th>TRANSITION TIME (UTC)</th>
+                    <th>STATE CHANGE</th>
+                    <th>OVERALL HEALTH</th>
+                    <th>REASON FOR STATE CHANGE</th>
+                    <th>METRICS SNAPSHOT</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {healthHistory.map((t) => {
+                    const badge =
+                      t.to_state === "EXCELLENT" ? { bg: "rgba(6,78,59,0.5)", border: "#10b981", color: "#34d399" } :
+                      t.to_state === "GOOD" ? { bg: "rgba(12,74,110,0.5)", border: "#0284c7", color: "#38bdf8" } :
+                      t.to_state === "FAIR" ? { bg: "rgba(120,53,15,0.5)", border: "#d97706", color: "#fbbf24" } :
+                      { bg: "rgba(136,19,55,0.5)", border: "#e11d48", color: "#f43f5e" };
+
+                    return (
+                      <tr key={t.id}>
+                        <td>
+                          <span style={{ color: "#94a3b8", fontSize: "11px" }}>
+                            {new Date(t.transitioned_at).toUTCString()}
+                          </span>
+                        </td>
+                        <td>
+                          <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                            <span style={{ color: "#64748b", fontSize: "11px" }}>{t.from_state}</span>
+                            <span style={{ color: "#94a3b8" }}>&rarr;</span>
+                            <span
+                              style={{
+                                padding: "2px 6px",
+                                borderRadius: "4px",
+                                fontSize: "10px",
+                                fontWeight: 700,
+                                background: badge.bg,
+                                borderColor: badge.border,
+                                color: badge.color,
+                                borderWidth: "1px",
+                                borderStyle: "solid",
+                              }}
+                            >
+                              {t.to_state}
+                            </span>
+                          </div>
+                        </td>
+                        <td>
+                          <span style={{ fontWeight: 600, color: badge.color }}>{t.overall_health}</span>
+                        </td>
+                        <td style={{ maxWidth: "420px", fontSize: "12px", color: "#cbd5e1", lineHeight: "1.4" }}>
+                          {t.reason}
+                        </td>
+                        <td>
+                          <code style={{ fontSize: "10px", color: "#94a3b8", maxWidth: "200px", display: "inline-block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                            {t.metrics_snapshot}
+                          </code>
+                        </td>
+                      </tr>
+                    );
+                  })}
+
+                  {!healthHistory.length && (
+                    <tr>
+                      <td colSpan={5} className="empty">
+                        {systemHealth ? (
+                          <div>
+                            Initial state evaluated: <b>{systemHealth.overall_health}</b>. Transition records will populate as states change over time.
+                          </div>
+                        ) : (
+                          "No health-state transition records found. Run collector and platform to record transitions."
+                        )}
                       </td>
                     </tr>
                   )}

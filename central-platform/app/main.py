@@ -1,5 +1,6 @@
 import os
 import json
+from typing import Any, Optional
 from datetime import datetime, timezone
 from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
@@ -7,7 +8,7 @@ from sqlalchemy import select, desc
 from sqlalchemy.orm import Session
 
 from app.database import Base, engine, get_db
-from app.models import MetricRecord, CollectorRecord, EgressAuditRecord, AnomalyRecord
+from app.models import MetricRecord, CollectorRecord, EgressAuditRecord, AnomalyRecord, HealthTransitionRecord
 from app.schemas import (
     Batch,
     CollectorRegisterIn,
@@ -16,10 +17,19 @@ from app.schemas import (
     EgressAuditOut,
     AnomalyDetailOut,
     AIOpsPreviewOut,
+    SystemHealthOut,
+    HealthTransitionOut,
 )
 from app.security import authenticate_agent
 from app.ml import score_feature_map, train_model
 from app.aiops import evaluate_aiops_telemetry
+from app.health import (
+    HealthState,
+    HealthConfig,
+    evaluate_system_health,
+    record_transition_if_changed,
+    get_health_history,
+)
 
 
 # --------------------------------------------------
@@ -727,3 +737,166 @@ def aiops_history(
         }
         for r in records
     ]
+
+
+# --------------------------------------------------
+# SRE FOUR-STATE HEALTH CLASSIFICATION ENGINE
+# --------------------------------------------------
+
+@app.get("/api/v1/health/system")
+def get_system_health(
+    force_record: bool = False,
+    identity=Depends(authenticate_agent),
+    db: Session = Depends(get_db),
+):
+    """
+    SRE Four-State Health Classification Engine Endpoint:
+    1. Evaluates live CPU, memory, disk, network latency, and error rate.
+    2. Evaluates collector availability and heartbeats.
+    3. Evaluates telemetry freshness (detects stale or missing telemetry).
+    4. Incorporates AIOps anomaly results.
+    5. Records health state transitions when the overall state changes.
+    6. Returns 4-state classification: EXCELLENT, GOOD, FAIR, POOR with explainable reasons.
+    """
+    tenant_id = identity["tenant_id"]
+
+    # 1. Fetch latest telemetry records for the tenant
+    rows = db.scalars(
+        select(MetricRecord)
+        .where(MetricRecord.tenant_id == tenant_id)
+        .order_by(MetricRecord.observed_at.desc())
+        .limit(100)
+    ).all()
+
+    metrics_map: dict[str, tuple[float, str]] = {}
+    last_telemetry_at = None
+    for r in rows:
+        if last_telemetry_at is None:
+            last_telemetry_at = r.observed_at
+        if r.metric_name not in metrics_map:
+            metrics_map[r.metric_name] = (r.metric_value, r.unit)
+
+    # 2. Fetch latest collector record
+    collector = db.scalars(
+        select(CollectorRecord)
+        .where(CollectorRecord.tenant_id == tenant_id)
+        .order_by(CollectorRecord.last_heartbeat.desc())
+        .limit(1)
+    ).first()
+
+    # 3. Fetch active AIOps anomalies
+    history_map: dict[str, list[float]] = {}
+    latest_vals: dict[str, float] = {}
+    for r in reversed(rows):
+        history_map.setdefault(r.metric_name, []).append(float(r.metric_value))
+        latest_vals[r.metric_name] = float(r.metric_value)
+    aiops_res = evaluate_aiops_telemetry(grouped_metrics=history_map, latest_metrics=latest_vals)
+    active_anomalies = aiops_res.get("anomalies", [])
+
+    # 4. Evaluate system health
+    evaluation = evaluate_system_health(
+        tenant_id=tenant_id,
+        metrics_map=metrics_map,
+        collector=collector,
+        last_telemetry_at=last_telemetry_at,
+        active_anomalies=active_anomalies,
+    )
+
+    # 5. Record transition if health state changed
+    record_transition_if_changed(
+        db=db,
+        tenant_id=tenant_id,
+        evaluation=evaluation,
+        force=force_record,
+    )
+
+    # 6. Retrieve transition history summary
+    history = get_health_history(db=db, tenant_id=tenant_id, limit=50)
+    latest_trans_out = None
+    if history:
+        latest = history[0]
+        latest_trans_out = {
+            "id": latest.id,
+            "tenant_id": latest.tenant_id,
+            "from_state": latest.from_state,
+            "to_state": latest.to_state,
+            "overall_health": latest.overall_health,
+            "reason": latest.reason,
+            "metrics_snapshot": latest.metrics_snapshot,
+            "transitioned_at": latest.transitioned_at.isoformat() if hasattr(latest.transitioned_at, "isoformat") else str(latest.transitioned_at),
+        }
+
+    evaluation["latest_transition"] = latest_trans_out
+    evaluation["transitions_count"] = len(history)
+
+    return evaluation
+
+
+@app.get("/api/v1/health/history")
+def get_health_transition_history(
+    limit: int = 50,
+    identity=Depends(authenticate_agent),
+    db: Session = Depends(get_db),
+):
+    """
+    SRE Health Transition History Log:
+    Returns chronological ledger of recorded state transitions with UTC timestamps.
+    """
+    tenant_id = identity["tenant_id"]
+    transitions = get_health_history(db=db, tenant_id=tenant_id, limit=limit)
+    return [
+        {
+            "id": t.id,
+            "tenant_id": t.tenant_id,
+            "from_state": t.from_state,
+            "to_state": t.to_state,
+            "overall_health": t.overall_health,
+            "reason": t.reason,
+            "metrics_snapshot": t.metrics_snapshot,
+            "transitioned_at": t.transitioned_at.isoformat() if hasattr(t.transitioned_at, "isoformat") else str(t.transitioned_at),
+        }
+        for t in transitions
+    ]
+
+
+@app.post("/api/v1/health/evaluate")
+def evaluate_custom_health(
+    payload: dict[str, Any],
+    identity=Depends(authenticate_agent),
+    db: Session = Depends(get_db),
+):
+    """
+    SRE On-demand Health Evaluation & Simulation Endpoint:
+    Allows passing metric overrides, custom thresholds, or collector status to evaluate 4-state health.
+    """
+    tenant_id = identity["tenant_id"]
+    metrics_map = payload.get("metrics")
+    if not metrics_map:
+        metrics_map = {
+            "cpu_utilization": (payload.get("cpu", 0.45), "ratio"),
+            "memory_utilization": (payload.get("memory", 0.55), "ratio"),
+            "disk_utilization": (payload.get("disk", 0.42), "ratio"),
+            "http_latency_p95_ms": (payload.get("latency", 180.0), "ms"),
+            "http_error_rate": (payload.get("error_rate", 0.01), "ratio"),
+        }
+
+    config = HealthConfig.from_dict(payload.get("thresholds", {}))
+    collector_override = payload.get("collector")
+    last_telemetry_override = payload.get("last_telemetry_at")
+    anomalies_override = payload.get("anomalies", [])
+    force_record = payload.get("record_transition", False)
+
+    evaluation = evaluate_system_health(
+        tenant_id=tenant_id,
+        metrics_map=metrics_map,
+        collector=collector_override,
+        last_telemetry_at=last_telemetry_override,
+        active_anomalies=anomalies_override,
+        config=config,
+    )
+
+    if force_record:
+        record_transition_if_changed(db, tenant_id, evaluation, force=True)
+
+    return evaluation
+

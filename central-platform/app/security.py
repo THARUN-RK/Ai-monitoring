@@ -20,12 +20,24 @@ DEMO_IDENTITIES = {
     },
 }
 
-def authenticate_agent(authorization: str | None = Header(default=None)):
-    if not authorization or not authorization.startswith("Bearer "):
+def authenticate_agent(
+    authorization: str | None = Header(default=None),
+    x_api_key: str | None = Header(default=None),
+):
+    supplied = None
+    if authorization and authorization.startswith("Bearer "):
+        supplied = authorization.removeprefix("Bearer ").strip()
+    elif x_api_key:
+        supplied = x_api_key.strip()
+    elif authorization:
+        supplied = authorization.strip()
+
+    if not supplied:
         raise HTTPException(status_code=401, detail="Agent authentication required")
-    supplied = authorization.removeprefix("Bearer ").strip()
+
     supplied_hash = hashlib.sha256(supplied.encode()).hexdigest()
     for stored_hash, identity in DEMO_IDENTITIES.items():
         if hmac.compare_digest(supplied_hash, stored_hash):
             return identity
     raise HTTPException(status_code=401, detail="Invalid agent credential")
+

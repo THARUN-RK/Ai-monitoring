@@ -140,3 +140,62 @@ class AIOpsPreviewOut(BaseModel):
     dynamic_baselines: dict[str, Any] = Field(default_factory=dict)
     security_risk_index: int = 0
     note: str = ""
+
+
+# -------------------------------------------------------------------------
+# SRE Four-State Health Classification Schemas
+# -------------------------------------------------------------------------
+
+class MetricHealthDetail(BaseModel):
+    metric_name: str
+    current_value: float
+    unit: str
+    state: str  # EXCELLENT, GOOD, FAIR, POOR
+    threshold_applied: dict[str, float]
+    reason: str
+
+class CollectorHealthDetail(BaseModel):
+    collector_id: str
+    status: str
+    last_heartbeat: Optional[str] = None
+    freshness_seconds: Optional[float] = None
+    state: str  # EXCELLENT, GOOD, FAIR, POOR
+    reason: str
+
+class FreshnessHealthDetail(BaseModel):
+    last_telemetry_at: Optional[str] = None
+    age_seconds: Optional[float] = None
+    state: str  # EXCELLENT, GOOD, FAIR, POOR
+    reason: str
+
+class AnomalyHealthDetail(BaseModel):
+    active_count: int
+    critical_count: int
+    warning_count: int
+    max_severity: str
+    state: str  # EXCELLENT, GOOD, FAIR, POOR
+    reason: str
+
+class HealthTransitionOut(BaseModel):
+    id: int
+    tenant_id: str
+    from_state: str
+    to_state: str
+    overall_health: str
+    reason: str
+    metrics_snapshot: str
+    transitioned_at: str
+
+class SystemHealthOut(BaseModel):
+    tenant_id: str
+    overall_health: str  # EXCELLENT, GOOD, FAIR, POOR
+    evaluated_at: str
+    summary_reason: str
+    reasons: list[str]
+    metrics: list[MetricHealthDetail]
+    collector: CollectorHealthDetail
+    freshness: FreshnessHealthDetail
+    anomalies: AnomalyHealthDetail
+    latest_transition: Optional[HealthTransitionOut] = None
+    transitions_count: int = 0
+

@@ -92,3 +92,21 @@ class AnomalyRecord(Base):
     detected_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
     )
+
+
+class HealthTransitionRecord(Base):
+    __tablename__ = "health_transition_records"
+    __table_args__ = (
+        Index("ix_health_trans_tenant_time", "tenant_id", "transitioned_at"),
+    )
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    from_state: Mapped[str] = mapped_column(String(24), nullable=False)
+    to_state: Mapped[str] = mapped_column(String(24), nullable=False)
+    overall_health: Mapped[str] = mapped_column(String(24), nullable=False)
+    reason: Mapped[str] = mapped_column(Text, nullable=False)
+    metrics_snapshot: Mapped[str] = mapped_column(Text, default="{}", nullable=False)
+    transitioned_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
+    )
+
