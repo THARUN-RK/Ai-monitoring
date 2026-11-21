@@ -36,11 +36,24 @@
       <a href="#" class="nav-link active" id="nav-dashboard">
         <i class="fas fa-gauge-high"></i><span>Dashboard</span>
       </a>
+      <a href="#" class="nav-link" id="nav-health">
+        <i class="fas fa-heart-pulse"></i><span>SRE Health</span>
+        <span class="nav-badge" id="nav-health-badge" style="background:#10b981; color:#fff">EXC</span>
+      </a>
+      <a href="#" class="nav-link" id="nav-incidents">
+        <i class="fas fa-triangle-exclamation"></i><span>Incidents</span>
+        <span class="nav-badge" id="nav-incident-badge" style="background:#ef4444; color:#fff">0</span>
+      </a>
       <a href="#" class="nav-link" id="nav-models">
         <i class="fas fa-microchip"></i><span>Models</span>
       </a>
       <a href="#" class="nav-link" id="nav-inference">
         <i class="fas fa-bolt"></i><span>Inference</span>
+      </a>
+
+      <span class="nav-group-label">SECURITY &amp; AUDIT</span>
+      <a href="#" class="nav-link" id="nav-egress">
+        <i class="fas fa-shield-halved"></i><span>Egress Proof</span>
       </a>
 
       <span class="nav-group-label">ANALYTICS</span>
@@ -87,17 +100,14 @@
       </div>
       <div class="header-right">
         <div class="header-clock" id="header-clock">00:00:00</div>
-        <div class="header-sys-status">
-          <div class="sys-dot"></div>
-          <span>All Systems Operational</span>
+        <div class="header-sys-status" id="header-health-btn" style="cursor:pointer;" title="Click to view SRE Four-State Health Classification">
+          <div class="sys-dot" id="header-health-dot" style="background:#10b981;"></div>
+          <span id="header-health-text" style="color:#10b981; font-weight:700;">HEALTH: EXCELLENT</span>
         </div>
-        <button class="notif-btn" id="notif-btn" aria-label="Notifications">
+        <button class="notif-btn" id="notif-btn" aria-label="Notifications" title="View Incidents &amp; Alerts">
           <i class="fas fa-bell"></i>
-          <span class="notif-count" id="notif-count">3</span>
+          <span class="notif-count" id="notif-count">0</span>
         </button>
-        <a href="http://localhost:5173" target="_blank" style="text-decoration:none; display:inline-flex; align-items:center; gap:6px; font-size:11px; padding:6px 12px; border-radius:6px; background:rgba(0, 212, 255, 0.1); border:1px solid rgba(0, 212, 255, 0.3); color:#00d4ff; font-weight:600;">
-          <i class="fas fa-satellite-dish"></i> REACT DASHBOARD
-        </a>
         <button class="live-btn" id="live-btn" title="Live Render Backend: https://ai-monitoring-5n2p.onrender.com">
           <span class="live-btn-dot"></span>LIVE RENDER
         </button>
@@ -136,7 +146,39 @@
     <div class="dashboard">
 
       <!-- ════════════ VIEW 1: DASHBOARD (FLEET OVERVIEW) ════════════ -->
-      <div id="view-dashboard" class="dashboard-view">
+      <div id="view-dashboard" class="dashboard-view" style="flex-direction:column; gap:20px;">
+
+      <!-- ── SRE SYSTEM HEALTH & INCIDENT HIGHLIGHTS BANNER ── -->
+      <section class="health-incident-banner" id="dashboard-health-banner" style="padding:18px 22px; border-radius:14px; background:linear-gradient(135deg, rgba(16,185,129,0.12), rgba(6,78,59,0.25)); border:1px solid rgba(16,185,129,0.35); display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:16px;">
+        <div style="display:flex; gap:16px; align-items:center;">
+          <div style="width:44px; height:44px; border-radius:10px; background:rgba(16,185,129,0.2); border:1px solid #10b981; display:flex; align-items:center; justify-content:center; color:#34d399; font-size:20px;">
+            <i class="fas fa-heart-pulse"></i>
+          </div>
+          <div>
+            <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+              <span style="font-size:11px; font-weight:800; letter-spacing:1.5px; color:#94a3b8; text-transform:uppercase;">SRE Four-State Health:</span>
+              <span class="badge" id="dash-health-badge" style="background:#064e3b; color:#34d399; border:1px solid #10b981; font-weight:800; font-size:12px; padding:3px 10px; letter-spacing:1px;">
+                EXCELLENT
+              </span>
+              <span style="font-size:11px; color:#64748b;" id="dash-freshness-text">· Telemetry age: 5.2s (Fresh)</span>
+              <span id="dash-incident-alert-pill" style="font-size:11px; padding:2px 8px; border-radius:4px; background:rgba(239,68,68,0.2); border:1px solid #ef4444; color:#ef4444; font-weight:700; display:none;">
+                <i class="fas fa-triangle-exclamation"></i> 1 INCIDENT ACTIVE
+              </span>
+            </div>
+            <p id="dash-health-summary" style="margin:5px 0 0; font-size:12px; color:#cbd5e1; max-width:760px; line-height:1.5;">
+              All infrastructure metrics (CPU, RAM, Disk, Latency, Error Rate) and collector heartbeats are within nominal operating thresholds.
+            </p>
+          </div>
+        </div>
+        <div style="display:flex; gap:10px; align-items:center;">
+          <button class="nw-btn nw-btn-cyan" id="dash-view-health-btn" style="font-size:11px; padding:8px 14px;">
+            <i class="fas fa-gauge-high"></i> SRE Health &amp; History &rarr;
+          </button>
+          <button class="nw-btn" id="dash-view-incidents-btn" style="background:rgba(239,68,68,0.15); border:1px solid rgba(239,68,68,0.4); color:#fca5a5; font-size:11px; padding:8px 14px;">
+            <i class="fas fa-triangle-exclamation"></i> Incident Hub &rarr;
+          </button>
+        </div>
+      </section>
 
       <!-- ── ROW 1: KPI Cards ── -->
       <section class="kpi-section" aria-label="Key Performance Indicators">
@@ -764,6 +806,205 @@
           </div>
         </div>
       </div><!-- /view-alerts -->
+
+      <!-- ════════════ VIEW: SRE FOUR-STATE SYSTEM HEALTH ════════════ -->
+      <div id="view-health" class="dashboard-view" style="display:none; flex-direction:column; gap:20px;">
+        <!-- Banner Card -->
+        <div class="card" style="padding:22px;">
+          <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:16px;">
+            <div>
+              <span style="font-size:10px; font-weight:800; letter-spacing:1.5px; color:#10b981; text-transform:uppercase;">SITE RELIABILITY ENGINEERING (SRE)</span>
+              <h2 style="font-size:22px; margin:6px 0 10px; display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
+                Four-State System Health Engine
+                <span class="badge" id="sre-health-state-badge" style="background:#064e3b; color:#34d399; border:1px solid #10b981; font-size:14px; padding:4px 14px; font-weight:800; letter-spacing:1.5px;">
+                  STATUS: EXCELLENT
+                </span>
+              </h2>
+              <p id="sre-health-summary-desc" style="color:#94a3b8; font-size:13px; line-height:1.6; max-width:760px; margin:0;">
+                All infrastructure metrics, collector heartbeats, and AIOps operational baselines are operating in EXCELLENT status.
+              </p>
+            </div>
+            <div style="background:#0b1320; padding:14px 18px; border-radius:10px; border:1px solid #1e293b; text-align:right;">
+              <span style="font-size:10px; color:#64748b; text-transform:uppercase; letter-spacing:1px; display:block;">Telemetry Freshness</span>
+              <strong id="sre-freshness-val" style="font-size:20px; color:#34d399; display:block;">5.2s ago</strong>
+              <small id="sre-freshness-sub" style="font-size:11px; color:#94a3b8;">● Fresh (&lt;15s SLA)</small>
+            </div>
+          </div>
+
+          <!-- Staleness SLA callout -->
+          <div style="margin-top:18px; padding:12px 16px; border-radius:8px; background:rgba(15, 23, 42, 0.7); border:1px solid #1e293b; font-size:12px; color:#94a3b8; display:flex; gap:10px; align-items:center;">
+            <i class="fas fa-shield-halved" style="color:#10b981; font-size:16px;"></i>
+            <div>
+              <b style="color:#e2e8f0;">SRE Staleness &amp; Four-State Policy:</b> Whenever telemetry age exceeds <b>30 seconds</b>, health is automatically downgraded to <b>FAIR</b>. If age exceeds <b>60 seconds</b> or collector goes offline, health is downgraded to <b>POOR</b>.
+            </div>
+          </div>
+        </div>
+
+        <!-- SRE Interactive Scenario Simulator -->
+        <div class="card" style="padding:18px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; flex-wrap:wrap; gap:10px;">
+            <div>
+              <b style="font-size:13px; letter-spacing:1px; color:#00d4ff; display:flex; align-items:center; gap:8px;">
+                <i class="fas fa-sliders"></i> SRE HEALTH EVALUATION SIMULATOR &amp; TEST CASES
+              </b>
+              <small style="color:#64748b; display:block; margin-top:2px;">
+                Inject test conditions to verify the 4-state engine without modifying customer host infrastructure.
+              </small>
+            </div>
+            <button class="nw-btn nw-btn-outline" id="sre-sim-reset-btn" style="font-size:11px; padding:5px 12px;">
+              Reset Live Telemetry
+            </button>
+          </div>
+
+          <div style="display:flex; gap:8px; flex-wrap:wrap;" id="sre-sim-buttons">
+            <button class="nw-btn" data-sim="normal" style="font-size:11px; padding:6px 12px; background:#064e3b; border:1px solid #10b981; color:#34d399;">
+              1. Normal CPU &amp; RAM &rarr; EXCELLENT
+            </button>
+            <button class="nw-btn" data-sim="minor" style="font-size:11px; padding:6px 12px; background:#0c4a6e; border:1px solid #0284c7; color:#38bdf8;">
+              2. Minor Deviation &rarr; GOOD
+            </button>
+            <button class="nw-btn" data-sim="elevated" style="font-size:11px; padding:6px 12px; background:#78350f; border:1px solid #d97706; color:#fbbf24;">
+              3. Elevated Resource &rarr; FAIR
+            </button>
+            <button class="nw-btn" data-sim="severe" style="font-size:11px; padding:6px 12px; background:#881337; border:1px solid #e11d48; color:#f43f5e;">
+              4. Severe Degradation &rarr; POOR
+            </button>
+            <button class="nw-btn" data-sim="offline" style="font-size:11px; padding:6px 12px; background:#881337; border:1px solid #e11d48; color:#f43f5e;">
+              5. Collector Offline &rarr; POOR
+            </button>
+            <button class="nw-btn" data-sim="stale" style="font-size:11px; padding:6px 12px; background:#78350f; border:1px solid #d97706; color:#fbbf24;">
+              6. Stale Telemetry (&gt;30s) &rarr; FAIR
+            </button>
+            <button class="nw-btn" data-sim="expired" style="font-size:11px; padding:6px 12px; background:#881337; border:1px solid #e11d48; color:#f43f5e;">
+              7. Missing Telemetry (&gt;60s) &rarr; POOR
+            </button>
+          </div>
+        </div>
+
+        <!-- Metric Component Grid -->
+        <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(260px, 1fr)); gap:16px;" id="sre-metrics-grid">
+          <!-- Populated dynamically via JS -->
+        </div>
+
+        <!-- Health-State Transition History Ledger -->
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title">
+              <i class="fas fa-history card-icon"></i>Health-State Transition History (<span id="sre-trans-count">0</span> Recorded)
+            </div>
+            <span style="font-size:11px; color:#64748b;">
+              Every state transition persisted in SQLite with UTC timestamps &amp; explanation reasons
+            </span>
+          </div>
+          <div class="card-body">
+            <div style="overflow-x:auto;">
+              <table class="data-table" id="sre-history-table">
+                <thead>
+                  <tr>
+                    <th>TRANSITION TIME (UTC)</th>
+                    <th>STATE CHANGE</th>
+                    <th>OVERALL HEALTH</th>
+                    <th>REASON FOR STATE CHANGE</th>
+                    <th>METRICS SNAPSHOT</th>
+                  </tr>
+                </thead>
+                <tbody id="sre-history-tbody">
+                  <tr><td colspan="5" style="text-align:center;color:#64748b;padding:16px;">Loading health transitions...</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div><!-- /view-health -->
+
+      <!-- ════════════ VIEW: INTELLIGENT INCIDENT CORRELATION ════════════ -->
+      <div id="view-incidents" class="dashboard-view" style="display:none; flex-direction:column; gap:20px;">
+        <!-- Header & Control Bar -->
+        <div class="card" style="padding:20px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:14px;">
+            <div>
+              <span style="font-size:10px; font-weight:800; letter-spacing:1.5px; color:#ef4444; text-transform:uppercase;">AIOPS INCIDENT MANAGEMENT</span>
+              <h2 style="font-size:22px; margin:4px 0 6px;">Intelligent Incident Correlation Engine</h2>
+              <p style="margin:0; color:#94a3b8; font-size:12px;">
+                Automated event deduplication, temporal causality grouping, and explainable root cause analysis (RCA).
+              </p>
+            </div>
+            <button class="nw-btn" id="nw-trigger-cascade-btn" style="background:linear-gradient(135deg, #7f1d1d, #991b1b); border:1px solid #ef4444; color:#fecaca; font-size:12px; font-weight:700; padding:10px 18px;">
+              <i class="fas fa-bolt"></i> Trigger Degradation Cascade (3 Alerts &rarr; 1 Incident)
+            </button>
+          </div>
+
+          <!-- Lifecycle Filter Pills -->
+          <div style="display:flex; gap:8px; margin-top:16px; border-top:1px solid #1e293b; padding-top:12px; align-items:center; flex-wrap:wrap;" id="nw-incident-filters">
+            <span style="font-size:11px; color:#64748b; text-transform:uppercase; letter-spacing:1px;">Filter Lifecycle:</span>
+            <button class="nw-btn nw-btn-cyan" data-filter="all" style="padding:4px 12px; font-size:11px;">All</button>
+            <button class="nw-btn nw-btn-outline" data-filter="Open" style="padding:4px 12px; font-size:11px;">Open</button>
+            <button class="nw-btn nw-btn-outline" data-filter="Investigating" style="padding:4px 12px; font-size:11px;">Investigating</button>
+            <button class="nw-btn nw-btn-outline" data-filter="Resolved" style="padding:4px 12px; font-size:11px;">Resolved</button>
+            <button class="nw-btn nw-btn-outline" data-filter="Closed" style="padding:4px 12px; font-size:11px;">Closed</button>
+          </div>
+        </div>
+
+        <!-- Split Workspace: Incident Queue + Incident Detail -->
+        <div style="display:grid; grid-template-columns:minmax(320px, 380px) 1fr; gap:18px; align-items:start;">
+          <!-- Left: Incident List -->
+          <div style="display:flex; flex-direction:column; gap:12px;" id="nw-incident-list">
+            <!-- Populated via JS -->
+          </div>
+
+          <!-- Right: Incident Deep Dive & RCA -->
+          <div class="card" id="nw-incident-detail" style="padding:24px;">
+            <!-- Populated via JS -->
+          </div>
+        </div>
+      </div><!-- /view-incidents -->
+
+      <!-- ════════════ VIEW: CRYPTOGRAPHIC EGRESS PROOF ════════════ -->
+      <div id="view-egress" class="dashboard-view" style="display:none; flex-direction:column; gap:20px;">
+        <div class="card" style="padding:22px;">
+          <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:16px;">
+            <div>
+              <span style="font-size:10px; font-weight:800; letter-spacing:1.5px; color:#00d4ff; text-transform:uppercase;">PRIVACY BY ARCHITECTURE</span>
+              <h2 style="font-size:22px; margin:6px 0 10px;">Egress Proof &amp; Client-Side Redaction Panel</h2>
+              <p style="color:#94a3b8; font-size:13px; line-height:1.6; max-width:760px; margin:0;">
+                The Egress Proof Engine records the exact telemetry payload immediately before transmission.
+                Passwords, API tokens, database connection strings, and unapproved attributes are purged client-side inside Tier 1.
+              </p>
+            </div>
+            <div style="padding:10px 16px; border-radius:8px; background:rgba(0,212,255,0.1); border:1px solid rgba(0,212,255,0.3); color:#00d4ff; font-weight:700; font-size:12px;">
+              <i class="fas fa-lock"></i> ZERO SECRETS LEAKED
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title">
+              <i class="fas fa-shield-halved card-icon"></i>Cryptographic Transmission Audit Log
+            </div>
+            <span style="font-size:11px; color:#64748b;">Verified Tier 1 Metadata Payloads</span>
+          </div>
+          <div class="card-body">
+            <div style="overflow-x:auto;">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>PAYLOAD ID</th>
+                    <th>COLLECTOR</th>
+                    <th>SENT AT (UTC)</th>
+                    <th>APPROVED FIELDS</th>
+                    <th>REDACTED / BLOCKED</th>
+                    <th>DELIVERY STATUS</th>
+                  </tr>
+                </thead>
+                <tbody id="egress-audit-tbody-full">
+                  <tr><td colspan="6" style="text-align:center;color:#64748b;padding:16px;">Loading egress proofs...</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div><!-- /view-egress -->
 
       <!-- ════════════ VIEW 7: SETTINGS & PRIVACY ════════════ -->
       <div id="view-settings" class="dashboard-view" style="display:none">

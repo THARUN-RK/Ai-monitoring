@@ -753,4 +753,53 @@ body {
   background: var(--glass-hover);
   border-color: var(--border-hover);
 }
+.nw-btn-red {
+  background: #dc2626;
+  color: #fff;
+}
+.nw-btn-red:hover {
+  background: #ef4444;
+  transform: translateY(-1px);
+}
+.nw-btn-emerald {
+  background: #059669;
+  color: #fff;
+}
+.nw-btn-emerald:hover {
+  background: #10b981;
+  transform: translateY(-1px);
+}
+.nw-btn-amber {
+  background: #d97706;
+  color: #fff;
+}
+.nw-btn-amber:hover {
+  background: #f59e0b;
+  transform: translateY(-1px);
+}
+.nw-btn-sm {
+  padding: 4px 10px;
+  font-size: 11px;
+}
+.nw-badge-excellent {
+  background: rgba(16, 185, 129, 0.18);
+  color: #34d399;
+  border: 1px solid #10b981;
+}
+.nw-badge-good {
+  background: rgba(59, 130, 246, 0.18);
+  color: #60a5fa;
+  border: 1px solid #3b82f6;
+}
+.nw-badge-fair {
+  background: rgba(245, 158, 11, 0.18);
+  color: #fbbf24;
+  border: 1px solid #f59e0b;
+}
+.nw-badge-poor {
+  background: rgba(239, 68, 68, 0.18);
+  color: #f87171;
+  border: 1px solid #ef4444;
+}
+
 
