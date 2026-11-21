@@ -8,7 +8,7 @@ from sqlalchemy import select, desc
 from sqlalchemy.orm import Session
 
 from app.database import Base, engine, get_db
-from app.models import MetricRecord, CollectorRecord, EgressAuditRecord, AnomalyRecord, HealthTransitionRecord
+from app.models import MetricRecord, CollectorRecord, EgressAuditRecord, AnomalyRecord, HealthTransitionRecord, IncidentRecord
 from app.schemas import (
     Batch,
     CollectorRegisterIn,
@@ -19,6 +19,9 @@ from app.schemas import (
     AIOpsPreviewOut,
     SystemHealthOut,
     HealthTransitionOut,
+    IncidentOut,
+    IncidentStatusUpdateIn,
+    CorrelatedAlert,
 )
 from app.security import authenticate_agent
 from app.ml import score_feature_map, train_model
@@ -29,6 +32,14 @@ from app.health import (
     evaluate_system_health,
     record_transition_if_changed,
     get_health_history,
+)
+from app.incidents import (
+    IncidentPriority,
+    IncidentStatus,
+    correlate_anomalies_into_incidents,
+    update_incident_status,
+    get_tenant_incidents,
+    get_incident_detail,
 )
 
 
@@ -899,4 +910,137 @@ def evaluate_custom_health(
         record_transition_if_changed(db, tenant_id, evaluation, force=True)
 
     return evaluation
+
+
+# --------------------------------------------------
+# SRE INTELLIGENT INCIDENT CORRELATION & MANAGEMENT
+# --------------------------------------------------
+
+def _format_incident_payload(inc: IncidentRecord) -> dict[str, Any]:
+    return {
+        "id": inc.id,
+        "incident_id": inc.incident_id,
+        "tenant_id": inc.tenant_id,
+        "title": inc.title,
+        "priority": inc.priority,
+        "status": inc.status,
+        "category": inc.category,
+        "affected_components": json.loads(inc.affected_components) if inc.affected_components else [],
+        "probable_root_cause": inc.probable_root_cause,
+        "confidence_score": round(inc.confidence_score, 2),
+        "recommended_investigation": inc.recommended_investigation,
+        "contributing_signals": json.loads(inc.contributing_signals) if inc.contributing_signals else [],
+        "alert_count": inc.alert_count,
+        "timeline": json.loads(inc.raw_alerts_payload) if inc.raw_alerts_payload else [],
+        "created_at": inc.created_at.isoformat() if hasattr(inc.created_at, "isoformat") else str(inc.created_at),
+        "updated_at": inc.updated_at.isoformat() if hasattr(inc.updated_at, "isoformat") else str(inc.updated_at),
+        "resolved_at": inc.resolved_at.isoformat() if inc.resolved_at and hasattr(inc.resolved_at, "isoformat") else (str(inc.resolved_at) if inc.resolved_at else None),
+    }
+
+
+@app.get("/api/v1/incidents")
+def list_incidents(
+    status: Optional[str] = None,
+    limit: int = 50,
+    identity=Depends(authenticate_agent),
+    db: Session = Depends(get_db),
+):
+    """
+    Retrieves correlated incidents for the authenticated tenant with optional lifecycle status filter.
+    Enforces strict tenant isolation.
+    """
+    tenant_id = identity["tenant_id"]
+    incidents = get_tenant_incidents(db=db, tenant_id=tenant_id, status=status, limit=limit)
+    return [_format_incident_payload(inc) for inc in incidents]
+
+
+@app.get("/api/v1/incidents/{incident_id}")
+def get_incident(
+    incident_id: str,
+    identity=Depends(authenticate_agent),
+    db: Session = Depends(get_db),
+):
+    """
+    Retrieves full detail of a specific incident including timeline, causality graph, and recommended action.
+    """
+    tenant_id = identity["tenant_id"]
+    incident = get_incident_detail(db=db, tenant_id=tenant_id, incident_id=incident_id)
+    if not incident:
+        raise HTTPException(status_code=404, detail="Incident not found or unauthorized")
+    return _format_incident_payload(incident)
+
+
+@app.patch("/api/v1/incidents/{incident_id}/status")
+def patch_incident_status(
+    incident_id: str,
+    update: IncidentStatusUpdateIn,
+    identity=Depends(authenticate_agent),
+    db: Session = Depends(get_db),
+):
+    """
+    Transitions the incident lifecycle: Open -> Investigating -> Resolved -> Closed.
+    """
+    tenant_id = identity["tenant_id"]
+    updated = update_incident_status(
+        db=db,
+        tenant_id=tenant_id,
+        incident_id=incident_id,
+        new_status=update.status,
+        note=update.note,
+    )
+    if not updated:
+        raise HTTPException(status_code=404, detail="Incident not found or unauthorized")
+    return _format_incident_payload(updated)
+
+
+@app.post("/api/v1/incidents/correlate")
+def correlate_incidents_endpoint(
+    payload: Optional[dict[str, Any]] = None,
+    identity=Depends(authenticate_agent),
+    db: Session = Depends(get_db),
+):
+    """
+    Trigger Intelligent Event Correlation:
+    Collects raw alerts from payload or active database anomalies,
+    correlates them across time window, components, and causality graphs into actionable incidents.
+    Enforces noise reduction / deduplication.
+    """
+    tenant_id = identity["tenant_id"]
+    raw_alerts = []
+
+    if payload and "alerts" in payload:
+        raw_alerts = payload["alerts"]
+    else:
+        # Collect recent anomalies from DB
+        recent_anomalies = db.scalars(
+            select(AnomalyRecord)
+            .where(AnomalyRecord.tenant_id == tenant_id)
+            .order_by(desc(AnomalyRecord.detected_at))
+            .limit(20)
+        ).all()
+        for a in recent_anomalies:
+            raw_alerts.append({
+                "alert_id": f"ALT-{a.id}",
+                "tenant_id": a.tenant_id,
+                "service": a.service,
+                "metric_name": a.metric_name,
+                "category": a.category,
+                "severity": a.severity,
+                "current_value": a.current_value,
+                "baseline_value": a.baseline_value,
+                "deviation_pct": a.deviation_pct,
+                "timestamp": a.detected_at.isoformat() if hasattr(a.detected_at, "isoformat") else str(a.detected_at),
+                "summary": a.summary,
+            })
+
+    time_window = payload.get("time_window_seconds", 300) if payload else 300
+    correlated = correlate_anomalies_into_incidents(
+        db=db,
+        tenant_id=tenant_id,
+        raw_alerts=raw_alerts,
+        time_window_seconds=time_window,
+    )
+
+    return [_format_incident_payload(inc) for inc in correlated]
+
 

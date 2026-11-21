@@ -110,3 +110,34 @@ class HealthTransitionRecord(Base):
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
     )
 
+
+class IncidentRecord(Base):
+    __tablename__ = "incident_records"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "incident_id", name="uq_tenant_incident"),
+        Index("ix_incident_tenant_status", "tenant_id", "status"),
+        Index("ix_incident_created", "tenant_id", "created_at"),
+    )
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    incident_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    priority: Mapped[str] = mapped_column(String(24), default="Medium", nullable=False)
+    status: Mapped[str] = mapped_column(String(24), default="Open", nullable=False)
+    category: Mapped[str] = mapped_column(String(32), default="infrastructure", nullable=False)
+    affected_components: Mapped[str] = mapped_column(Text, default="[]", nullable=False)
+    probable_root_cause: Mapped[str] = mapped_column(Text, nullable=False)
+    confidence_score: Mapped[float] = mapped_column(Float, default=0.85, nullable=False)
+    recommended_investigation: Mapped[str] = mapped_column(Text, nullable=False)
+    contributing_signals: Mapped[str] = mapped_column(Text, default="[]", nullable=False)
+    alert_count: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    raw_alerts_payload: Mapped[str] = mapped_column(Text, default="[]", nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
+    )
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+

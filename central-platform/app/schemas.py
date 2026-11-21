@@ -199,3 +199,44 @@ class SystemHealthOut(BaseModel):
     latest_transition: Optional[HealthTransitionOut] = None
     transitions_count: int = 0
 
+
+# -------------------------------------------------------------------------
+# SRE Incident Correlation & Lifecycle Schemas
+# -------------------------------------------------------------------------
+
+class CorrelatedAlert(BaseModel):
+    alert_id: str
+    service: str
+    metric_name: str
+    category: str
+    severity: str
+    current_value: float
+    baseline_value: float
+    deviation_pct: float
+    timestamp: str
+    summary: str
+
+class IncidentOut(BaseModel):
+    id: int
+    incident_id: str
+    tenant_id: str
+    title: str
+    priority: str  # Critical, High, Medium, Low
+    status: str    # Open, Investigating, Resolved, Closed
+    category: str
+    affected_components: list[str]
+    probable_root_cause: str
+    confidence_score: float
+    recommended_investigation: str
+    contributing_signals: list[str]
+    alert_count: int
+    timeline: list[CorrelatedAlert]
+    created_at: str
+    updated_at: str
+    resolved_at: Optional[str] = None
+
+class IncidentStatusUpdateIn(BaseModel):
+    status: Literal["Open", "Investigating", "Resolved", "Closed"]
+    note: Optional[str] = None
+
+
