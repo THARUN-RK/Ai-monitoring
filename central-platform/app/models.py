@@ -68,3 +68,27 @@ class EgressAuditRecord(Base):
     api_response_status: Mapped[int] = mapped_column(Integer, default=202, nullable=False)
     sanitized_sample: Mapped[str] = mapped_column(Text, default="", nullable=False)
 
+
+
+class AnomalyRecord(Base):
+    __tablename__ = "anomaly_records"
+    __table_args__ = (
+        Index("ix_anomaly_tenant_time", "tenant_id", "detected_at"),
+    )
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    service: Mapped[str] = mapped_column(String(64), nullable=False)
+    metric_name: Mapped[str] = mapped_column(String(64), nullable=False)
+    category: Mapped[str] = mapped_column(String(32), default="infrastructure", nullable=False)
+    severity: Mapped[str] = mapped_column(String(24), default="warning", nullable=False)
+    current_value: Mapped[float] = mapped_column(Float, nullable=False)
+    baseline_value: Mapped[float] = mapped_column(Float, nullable=False)
+    deviation_pct: Mapped[float] = mapped_column(Float, nullable=False)
+    z_score: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    confidence: Mapped[float] = mapped_column(Float, default=0.9, nullable=False)
+    summary: Mapped[str] = mapped_column(String(255), nullable=False)
+    probable_cause: Mapped[str] = mapped_column(Text, nullable=False)
+    recommended_action: Mapped[str] = mapped_column(Text, nullable=False)
+    detected_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
+    )

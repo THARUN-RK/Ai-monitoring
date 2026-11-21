@@ -1,6 +1,6 @@
 import math
 from datetime import datetime
-from typing import Literal, Optional
+from typing import Literal, Optional, Any
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 class StrictModel(BaseModel):
@@ -106,3 +106,37 @@ class EgressAuditOut(BaseModel):
     delivery_status: str
     api_response_status: int
     sanitized_sample: str
+
+
+# -------------------------------------------------------------------------
+# AIOps Explainable Anomaly Detection Schemas
+# -------------------------------------------------------------------------
+
+class AnomalyDetailOut(BaseModel):
+    metric_name: str
+    category: str
+    severity: str
+    current_value: float
+    baseline_value: float
+    deviation_pct: float
+    z_score: float
+    confidence: float
+    summary: str
+    probable_cause: str
+    recommended_action: str
+
+class AIOpsPreviewOut(BaseModel):
+    tenant_id: str
+    status: str
+    anomaly: bool
+    score: float
+    severity: str
+    model_version: str
+    explanation: str
+    probable_cause: str
+    recommendation: str
+    signals: list[dict[str, Any]] = Field(default_factory=list)
+    anomalies: list[AnomalyDetailOut] = Field(default_factory=list)
+    dynamic_baselines: dict[str, Any] = Field(default_factory=dict)
+    security_risk_index: int = 0
+    note: str = ""
